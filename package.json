@@ -2,8 +2,11 @@
   "dependencies": {
     "@fastly/js-compute": "^3.30.1"
   },
-  "devDependencies": {
-    "@fastly/cli": "^10.14.0"
+ "dependencies": {
+    "@slack/bolt": "^3.17.0",
+    "@slack/web-api": "^7.0.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
   },
   "scripts": {
     "build": "js-compute-runtime src/index.js bin/main.wasm",
