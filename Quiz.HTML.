@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swiss German Quiz</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .question { font-weight: bold; margin-bottom: 10px; }
+    button { margin: 5px; padding: 10px; }
+  </style>
+</head>
+<body>
+  <h2>Swiss German Quiz</h2>
+  <div id="quiz"></div>
+  <div id="result"></div>
+
+  <script>
+    const quizData = [
+      {
+        question: "What does 'Grüezi' mean?",
+        options: ["Hello", "Goodbye", "Thanks", "Sorry"],
+        answer: "Hello"
+      },
+      {
+        question: "What does 'Merci vilmal' mean?",
+        options: ["Thanks a lot", "See you soon", "Good morning", "Good night"],
+        answer: "Thanks a lot"
+      }
+    ];
+
+    let current = 0;
+    let score = 0;
+
+    function loadQuestion() {
+      if (current < quizData.length) {
+        const q = quizData[current];
+        document.getElementById("quiz").innerHTML = `
+          <div class="question">${q.question}</div>
+          ${q.options.map(o => `<button onclick="checkAnswer('${o}')">${o}</button>`).join("")}
+        `;
+      } else {
+        document.getElementById("quiz").innerHTML = "";
+        document.getElementById("result").innerHTML =
+          `Quiz finished! Score: ${score}/${quizData.length}`;
+      }
+    }
+
+    function checkAnswer(selected) {
+      if (selected === quizData[current].answer) {
+        score++;
+        alert("✅ Correct!");
+      } else {
+        alert("❌ Wrong! Correct answer: " + quizData[current].answer);
+      }
+      current++;
+      loadQuestion();
+    }
+
+    loadQuestion();
+  </script>
+</body>
+</html>
