@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>لعبة الطيارة — نسخة ترفيهية</title>
+<style>
+  :root{
+    --bg:#071126; --panel:#0b1730; --accent:#ffba00; --muted:#9fb0c8;
+    --glass: rgba(255,255,255,0.03);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter, "Segoe UI",Arial; background:linear-gradient(180deg,#041028 0%, #071126 100%); color:#eaf6ff; display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
+  .app{width:100%;max-width:480px}
+  header{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,#ffd86b,#ff7a00);display:flex;align-items:center;justify-content:center;font-weight:800;color:#071126}
+  h1{font-size:18px;margin:0}
+  p.lead{margin:0;color:var(--muted);font-size:13px}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent); padding:12px;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,0.6);margin-bottom:12px}
+  .mult{font-size:48px;font-weight:800;text-align:center;color:var(--accent);letter-spacing:1px}
+  .status{font-size:14px;text-align:center;color:var(--muted);margin-top:6px}
+  .controls{display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap}
+  button{padding:12px 14px;border-radius:10px;border:0;font-weight:700;cursor:pointer}
+  .btn-start{background:#06b6d4;color:#042029}
+  .btn-cash{background:var(--accent);color:#041126}
+  .btn-disabled{opacity:0.45;pointer-events:none}
+  .meter{height:10px;background:rgba(255,255,255,0.04);border-radius:10px;overflow:hidden;margin-top:10px}
+  .meter > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#ffd86b,#ff7a00);transition:width 120ms linear}
+  .footer{font-size:12px;color:var(--muted);text-align:center;margin-top:8px}
+  .history{max-height:180px;overflow:auto;margin-top:8px}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px dashed rgba(255,255,255,0.02);font-size:14px}
+  .leader{margin-top:8px}
+  .muted-note{font-size:12px;color:var(--muted);text-align:center;margin-top:6px}
+  @media(max-width:420px){ .mult{font-size:38px} button{padding:10px 12px} }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">✈️</div>
+      <div>
+        <h1>لعبة الطيارة — ترفيه</h1>
+        <p class="lead">أوقف المضاعِف قبل أن ينهار. لا أموال — للاختبار فقط.</p>
+      </div>
+    </header>
+
+    <div class="card" id="gameCard">
+      <div class="mult" id="multiplier">1.00x</div>
+      <div class="status" id="status">جاهز — اضغط ابدأ للدوران</div>
+      <div class="meter" aria-hidden>
+        <i id="meterBar"></i>
+      </div>
+
+      <div class="controls">
+        <button id="startBtn" class="btn-start">ابدأ</button>
+        <button id="cashBtn" class="btn-cash btn-disabled">Cash Out</button>
+      </div>
+
+      <div class="muted-note">أقصى مضاعف عند الانهيار يحدده النظام عشوائياً في كل جولة.</div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>سجل الجولات</strong>
+        <button id="clearHistory" style="background:transparent;border:1px solid rgba(255,255,255,0.04);padding:6px;border-radius:8px;color:var(--muted)">مسح</button>
+      </div>
+      <div class="history" id="historyList"></div>
+
+      <div class="leader">
+        <strong>أفضل 5 نقاط (محلي)</strong>
+        <div id="leaderboard"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      صمّمت بواسطة AI — نسخة للتعلّم والاختبار. ممنوع استخدام أي أموال حقيقية.
+    </div>
+  </div>
+
+<script>
+/*
+  نسخة ترفيهية من لعبة Crash/Aviator.
+  - لا أموال حقيقية.
+  - كل جولة: يتم اختيار قيمة crashRandom بقانون توزيع لجعل اللعبة متشعبة.
+  - اللاعب يضغط "Cash Out" للحصول على قيمة المضاعف عند ذلك التوقيت.
+  - الحفظ محلياً في localStorage كـ history و leaderboard.
+*/
+
+// عناصر الواجهة
+const multiplierEl = document.getElementById('multiplier');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+const cashBtn = document.getElementById('cashBtn');
+const meterBar = document.getElementById('meterBar');
+const historyList = document.getElementById('historyList');
+const leaderboardEl = document.getElementById('leaderboard');
+const clearHistoryBtn = document.getElementById('clearHistory');
+
+// حالة اللعبة
+let running = false;
+let crashed = false;
+let currentMult = 1.0;
+let startTime = 0;
+let rafId = null;
+let crashMultiplier = 0;
+let cashOutValue = null;
+
+// إعدادات سلوك الصعود
+const accel = 0.0018; // تسريع التصاعد (بتعديل هذه القيمة تتغير سرعة الصعود)
+const baseSpeed = 0.002; // أساس الزيادة
+// ملاحظة: القيم مضبوطة لجعل التجربة ممتعة على الموبايل. يمكنك تعديل accel/baseSpeed.
+
+function seededCrashRandom(){
+  // نستخدم Crypto RNG للحصول على قيمة عشوائية ثم نحوّلها لتوزيع يجعل بعض الجولات قصيرة وبعضها طويلة.
+  // نريد أن تكون احتمالية القيم الكبيرة صغيرة — نستخدم دالة عكسية للتقليل من تكرار القيم الكبيرة.
+  const arr = new Uint32Array(1);
+  crypto.getRandomValues(arr);
+  const r = arr[0] / 0xFFFFFFFF; // [0,1)
+  // تحويل r إلى crash multiplier: مثال بسيط: 1 / (1 - r) يعطينا توزيع ثقيلي الذيل، لكن نضبطه
+  // لتجنب القيم اللا نهائية نحدّ r < 0.995
+  const clipped = Math.min(r, 0.995);
+  // نستخدم تحويل لوغاريتمي منطقي: mm = 1 + (1 / (1 - clipped)) * factor
+  // نجعل النتائج عادة بين ~1.0 و ~30.0 مع احتمالية منخفضة لقيم أكبر.
+  const factor = 0.08;
+  const mm = 1 + (1 / (1 - clipped)) * factor;
+  // لضبط، نأخذ جذر لنعكس الزيادة الشديدة قليلاً
+  return Math.max(1.0, +(Math.sqrt(mm)).toFixed(2));
+}
+
+function resetRound(){
+  running = false;
+  crashed = false;
+  currentMult = 1.0;
+  crashMultiplier = 0;
+  cashOutValue = null;
+  cancelAnimationFrame(rafId);
+  meterBar.style.width = '0%';
+  multiplierEl.textContent = formatMult(currentMult);
+  cashBtn.classList.add('btn-disabled');
+  statusEl.textContent = 'جاهز — اضغط ابدأ للدوران';
+}
+
+// تنسيق العرض
+function formatMult(m){
+  return (Math.round(m*100)/100).toFixed(2) + 'x';
+}
+
+// بدء الجولة
+function startRound(){
+  if(running) return;
+  // توليد قيمة الانهيار للعَدَل
+  crashMultiplier = seededCrashRandom();
+  running = true;
+  crashed = false;
+  currentMult = 1.0;
+  cashOutValue = null;
+  startTime = performance.now();
+  statusEl.textContent = 'تعمل الطيارة — اضغط Cash Out للخروج';
+  cashBtn.classList.remove('btn-disabled');
+  // بدء حلقة الرسم/التصاعد
+  rafId = requestAnimationFrame(loop);
+}
+
+// حلقة التصاعد
+function loop(ts){
+  if(!running) return;
+  const t = (ts - startTime);
+  // نزيح الزيادة لعمل تصاعد غير خطي (تزايد أسرع مع الزمن)
+  // دالة تقريبية: mult = exp(baseSpeed * t^alpha) أو mult = 1 + k * t^(1.08)
+  // سنستخدم صيغة نموّة بسيطة:
+  const timeSec = t / 1000;
+  // هذه الدالة تعطي نمو بمعدل متزايد، يمكنك تعديلها لتغيير اللعب:
+  currentMult = 1 + (Math.exp(baseSpeed * Math.pow(timeSec*10, 1.05)) - 1) * accel * 100;
+  // تأقلم، لا نجعلها تنمو بعيداً جداً بسرعة
+  currentMult = Math.max(1.0, +(currentMult).toFixed(2));
+
+  // تحديث الواجهة
+  multiplierEl.textContent = formatMult(currentMult);
+  // تحديث شريط التقدم نسبةً إلى crashMultiplier (لإعطاء إحساس)
+  const pct = Math.min(100, (Math.log(currentMult) / Math.log(crashMultiplier)) * 100);
+  meterBar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+
+  // التحقق من الانهيار
+  if(currentMult >= crashMultiplier){
+    // انطفأت الطيارة
+    crashed = true;
+    running = false;
+    multiplierEl.textContent = formatMult(crashMultiplier) + ' ✖';
+    statusEl.textContent = 'انتهت الجولة — الطيارة انهارت';
+    cashBtn.classList.add('btn-disabled');
+    // حفظ النتيجة (خسارة)
+    saveHistory({time: new Date().toISOString(), result:'crash', multiplier: crashMultiplier, cashed:false});
+    updateUI();
+    return;
+  }
+
+  rafId = requestAnimationFrame(loop);
+}
+
+// Cash Out
+function cashOut(){
+  if(!running || crashed) return;
+  cashOutValue = currentMult;
+  running = false;
+  cancelAnimationFrame(rafId);
+  statusEl.textContent = 'تم الخروج عند: ' + formatMult(cashOutValue);
+  cashBtn.classList.add('btn-disabled');
+  // حفظ النتيجة (نجاح)
+  saveHistory({time: new Date().toISOString(), result:'cashed', multiplier: +cashOutValue.toFixed(2), cashed:true});
+  updateUI();
+}
+
+// سجل الجولات والـ leaderboard
+function saveHistory(entry){
+  const arr = JSON.parse(localStorage.getItem('crash_history')||'[]');
+  arr.unshift(entry);
+  localStorage.setItem('crash_history', JSON.stringify(arr.slice(0,200)));
+  // لو cashed نضيف للـ leaderboard بالأرقام الأكبر
+  if(entry.cashed){
+    const lb = JSON.parse(localStorage.getItem('crash_leader')||'[]');
+    lb.push({multiplier: entry.multiplier, time: entry.time});
+    lb.sort((a,b)=> b.multiplier - a.multiplier);
+    localStorage.setItem('crash_leader', JSON.stringify(lb.slice(0,50)));
+  }
+}
+
+// عرض التاريخ وleaderboard
+function renderHistory(){
+  const arr = JSON.parse(localStorage.getItem('crash_history')||'[]');
+  if(arr.length===0){ historyList.innerHTML = '<div class="row"><em style="color:var(--muted)">لا توجد جولات بعد</em></div>'; return; }
+  historyList.innerHTML = arr.map(it=> {
+    if(it.result==='crash') return `<div class="row"><div>انهيار — ${formatMult(it.multiplier)}</div><div style="color:var(--muted);font-size:12px">${new Date(it.time).toLocaleString()}</div></div>`;
+    else return `<div class="row"><div>خروج ناجح — ${formatMult(it.multiplier)}</div><div style="color:var(--muted);font-size:12px">${new Date(it.time).toLocaleString()}</div></div>`;
+  }).join('');
+}
+
+function renderLeaderboard(){
+  const lb = JSON.parse(localStorage.getItem('crash_leader')||'[]');
+  if(lb.length===0){ leaderboardEl.innerHTML = '<div class="row"><em style="color:var(--muted)">لا توجد نتائج محفوظة</em></div>'; return; }
+  leaderboardEl.innerHTML = lb.slice(0,5).map((it,idx)=> `<div class="row"><div>#${idx+1} — ${formatMult(it.multiplier)}</div><div style="color:var(--muted);font-size:12px">${new Date(it.time).toLocaleString()}</div></div>`).join('');
+}
+
+// واجهة وتفعيل أزرار
+startBtn.addEventListener('click', ()=>{
+  if(running){ // إيقاف جولة جارية (اختياري) => لا نفعل
+    return;
+  }
+  resetRound();
+  startRound();
+});
+cashBtn.addEventListener('click', cashOut);
+clearHistoryBtn.addEventListener('click', ()=>{
+  if(confirm('مسح السجل ونتائج اللوحة؟')){ localStorage.removeItem('crash_history'); localStorage.removeItem('crash_leader'); renderHistory(); renderLeaderboard(); }
+});
+
+// تحديث عرض الواجهة بشكل دوري
+function updateUI(){
+  renderHistory();
+  renderLeaderboard();
+}
+
+// init
+resetRound();
+updateUI();
+
+</script>
+</body>
+</html>
