@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Birthday Card — Salma</title>
+<style>
+  :root { --slytherin-url: url("https://i.ibb.co/3WWhtv4/slytherin.jpg"); }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;font-family: "Trebuchet MS", sans-serif; background:#0b1a0b;}
+  .page{
+    position:absolute; inset:0; display:none; justify-content:center; align-items:center;
+    text-align:center; padding:20px; background-image:var(--slytherin-url); background-size:cover;
+    background-position:center;
+  }
+  .page::before{ content:""; position:absolute; inset:0; background:rgba(0,0,0,0.35); pointer-events:none; }
+  .page.active{display:flex}
+  h1,h2{margin:0;color:#fff; z-index:2}
+  p{margin:6px 0 0;color:#fff; z-index:2}
+  .btn{
+    z-index:2; margin-top:18px; padding:10px 18px; border-radius:10px; border:2px solid rgba(255,255,255,0.95);
+    background: rgba(0,0,0,0.45); color:#fff; cursor:pointer; font-size:18px;
+  }
+
+  /* بالونات */
+  #balloons{ position:fixed; inset:0; pointer-events:none; z-index:1; overflow:hidden; }
+  .balloon{ position:absolute; font-size:40px; user-select:none; animation: rise linear infinite; }
+  @keyframes rise { from { transform: translateY(0vh) } to { transform: translateY(-130vh) } }
+
+  /* rocket */
+  #rocketEl{ font-size:90px; z-index:2; display:inline-block; transition: transform 2.3s cubic-bezier(.2,.8,.2,1); }
+  #rocketEl.launch{ transform: translateY(-85vh) scale(.8) }
+
+  /* confetti pieces */
+  .confetti{ position:fixed; z-index:3; pointer-events:none; border-radius:2px; opacity:1; transform-origin:center; }
+
+  /* signature text in corner */
+  .signature{ position:absolute; right:12px; bottom:12px; font-size:14px; color:rgba(255,255,255,0.95); z-index:2; }
+  /* final page style */
+  #p5 h1{ color: gold; text-shadow:0 3px 8px rgba(0,0,0,0.6) }
+</style>
+</head>
+<body>
+
+  <!-- Balloons layer -->
+  <div id="balloons"></div>
+
+  <!-- Pages -->
+  <div class="page active" id="p1">
+    <div style="z-index:2">
+      <h1>🌞 Hello multiverse sun 🌞</h1>
+      <button class="btn" onclick="goTo(2)">Next ➜</button>
+    </div>
+    <div class="signature">Best regards: Peverll</div>
+  </div>
+
+  <div class="page" id="p2">
+    <div style="z-index:2">
+      <h1>🥳 Are you ready for your birthday? 🎂</h1>
+      <button class="btn" onclick="goTo(3)">Next ➜</button>
+    </div>
+    <div class="signature">Best regards: Peverll</div>
+  </div>
+
+  <div class="page" id="p3">
+    <div style="z-index:2">
+      <div id="rocketEl">🚀</div>
+      <h1 id="birthdayText" style="display:none; margin-top:16px;">🎉 Happy Birthday Salma 🎂</h1>
+      <p id="note" style="display:none;">Best regards: Peverll</p>
+      <button class="btn" id="next3" style="display:none" onclick="goTo(4)">Next ➜</button>
+    </div>
+    <div class="signature">Best regards: Peverll</div>
+  </div>
+
+  <div class="page" id="p4">
+    <div style="z-index:2">
+      <h2>✨ I wish you a happy life ✨<br>Umm Adam</h2>
+      <button class="btn" onclick="goTo(5)">Next ➜</button>
+    </div>
+    <div class="signature">Best regards: Peverll</div>
+  </div>
+
+  <div class="page" id="p5">
+    <div style="z-index:2">
+      <h1>مع تحيات الباشمهندس الطيار ✈️</h1>
+    </div>
+    <div class="signature">Best regards: Peverll</div>
+  </div>
+
+  <!-- أصوات -->
+  <audio id="applause" src="https://www.soundjay.com/human/applause-8.mp3" preload="auto"></audio>
+  <audio id="explode"  src="https://www.soundjay.com/misc/explosion-01.mp3" preload="auto"></audio>
+  <audio id="fanfare"  src="https://www.soundjay.com/misc/success-fanfare-trumpets-01.mp3" preload="auto"></audio>
+
+<script>
+/* ======= Utilities ======= */
+function safePlay(a){ if(!a) return; const p = a.play(); if(p && p.catch) p.catch(()=>{}); }
+
+/* ======= Balloons ======= */
+const balloonsLayer = document.getElementById('balloons');
+function addBalloon(){
+  const b = document.createElement('div');
+  b.className = 'balloon';
+  b.innerText = '🎈';
+  const size = 36 + Math.random()*44;
+  b.style.fontSize = size + 'px';
+  b.style.left = (5 + Math.random()*90) + 'vw';
+  // start just below viewport
+  b.style.top = (100 + Math.random()*20) + 'vh';
+  b.style.animationDuration = (6 + Math.random()*6) + 's';
+  balloonsLayer.appendChild(b);
+  // remove after done
+  setTimeout(()=>{ try{ b.remove() }catch(e){} }, (parseFloat(b.style.animationDuration)||7)*1000 + 700);
+}
+let balloonInterval = setInterval(addBalloon, 700);
+for(let i=0;i<6;i++) addBalloon();
+
+/* ======= Navigation & audio ======= */
+let current = 1;
+const applause = document.getElementById('applause');
+const explode = document.getElementById('explode');
+const fanfare = document.getElementById('fanfare');
+
+function goTo(n){
+  // hide prev
+  const prev = document.getElementById('p'+current);
+  if(prev) prev.classList.remove('active');
+
+  // clear any running p3 timers if leaving p3
+  if(current === 3){ clearP3Timers(); resetP3State(); }
+
+  current = n;
+  const page = document.getElementById('p'+current);
+  if(page) page.classList.add('active');
+
+  // sounds & actions
+  if(current === 1){ safePlay(fanfare); }
+  else if(current === 2){ safePlay(applause); }
+  else if(current === 3){ // rocket sequence
+    startRocketSequence();
+  } else if(current === 4){ safePlay(applause); }
+  else if(current === 5){ safePlay(fanfare); }
+}
+
+/* ======= Page 3: rocket -> explosion -> show text ======= */
+let p3Timers = [];
+function clearP3Timers(){ p3Timers.forEach(t=>clearTimeout(t)); p3Timers = []; }
+
+function resetP3State(){
+  const rocket = document.getElementById('rocketEl');
+  const bt = document.getElementById('birthdayText');
+  const note = document.getElementById('note');
+  const btn3 = document.getElementById('next3');
+  rocket.classList.remove('launch');
+  bt.style.display = 'none';
+  note.style.display = 'none';
+  btn3.style.display = 'none';
+  // remove old confetti
+  document.querySelectorAll('.confetti').forEach(e=>e.remove());
+}
+
+function startRocketSequence(){
+  resetP3State();
+  // tiny delay then launch
+  p3Timers.push(setTimeout(()=> {
+    document.getElementById('rocketEl').classList.add('launch');
+  }, 150));
+
+  // after ~2300ms explode
+  p3Timers.push(setTimeout(()=> {
+    safePlay(explode);
+    // create explosion confetti at center
+    const cx = window.innerWidth/2;
+    const cy = window.innerHeight/2 - 40;
+    createExplosion(cx, cy, 120);
+    // show text after a bit
+    p3Timers.push(setTimeout(()=> {
+      document.getElementById('birthdayText').style.display = 'block';
+      document.getElementById('note').style.display = 'block';
+      document.getElementById('next3').style.display = 'inline-block';
+      setTimeout(()=> safePlay(applause), 200);
+    }, 600));
+  }, 2300));
+}
+
+/* ======= Confetti creation (uses transitions) ======= */
+function createExplosion(x, y, count){
+  const colors = ['#FF5C8A','#FFD166','#74C69D','#9AD0EC','#C77DFF','#FFB347','#FFF176'];
+  for(let i=0;i<count;i++){
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    const w = 6 + Math.random()*10;
+    const h = 8 + Math.random()*10;
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+    el.style.left = (x - w/2) + 'px';
+    el.style.top  = (y - h/2) + 'px';
+    el.style.background = colors[Math.floor(Math.random()*colors.length)];
+    el.style.opacity = 1;
+    el.style.transform = `translate(0px,0px) rotate(${Math.random()*360}deg)`;
+    document.body.appendChild(el);
+
+    const angle = Math.random()*Math.PI*2;
+    const dist = 60 + Math.random()*260;
+    const dx = Math.cos(angle)*dist;
+    const dy = Math.sin(angle)*dist;
+    const rot = (Math.random()*720 - 360);
+    // set transition then trigger movement
+    const duration = 700 + Math.random()*1000;
+    el.style.transition = `transform ${duration}ms cubic-bezier(.12,.7,.3,1), opacity ${duration+200}ms linear`;
+    // force reflow
+    void el.offsetWidth;
+    el.style.transform = `translate(${dx}px, ${dy}px) rotate(${rot}deg)`;
+    el.style.opacity = 0;
+    // cleanup
+    setTimeout(()=>{ try{ el.remove() }catch(e){} }, duration + 400);
+  }
+}
+
+/* ======= preload audio on load (helps play after user gesture) ======= */
+window.addEventListener('load', ()=> {
+  [applause, explode, fanfare].forEach(a=>{ try{ a.load(); }catch(e){} });
+});
+</script>
+</body>
+</html>
