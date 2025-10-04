@@ -1,0 +1,91 @@
+// server.js - Parcel Tracking Website Backend
+
+const express = require("express");
+const session = require("express-session");
+const bcrypt = require("bcrypt");
+const path = require("path");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+let parcels = []; // store parcels in memory
+
+const ADMIN_USERNAME = "admin";
+const ADMIN_PASSWORD_HASH = bcrypt.hashSync("password", 10); // default password
+
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+app.use(session({
+  secret: "parceltrackingsecret",
+  resave: false,
+  saveUninitialized: true
+}));
+
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
+function generateTrackingCode() {
+  return 'PKG-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+}
+
+// Admin login page
+app.get("/admin/login", (req, res) => {
+  res.render("admin-login", { error: null });
+});
+
+app.post("/admin/login", async (req, res) => {
+  const { username, password } = req.body;
+  if (username === ADMIN_USERNAME && await bcrypt.compare(password, ADMIN_PASSWORD_HASH)) {
+    req.session.admin = true;
+    res.redirect("/admin/dashboard");
+  } else {
+    res.render("admin-login", { error: "Invalid credentials" });
+  }
+});
+
+// Admin dashboard
+app.get("/admin/dashboard", (req, res) => {
+  if (!req.session.admin) return res.redirect("/admin/login");
+  res.render("admin-dashboard", { parcels });
+});
+
+// Add parcel
+app.post("/admin/add-parcel", (req, res) => {
+  if (!req.session.admin) return res.redirect("/admin/login");
+  const { sender, recipient, origin, destination, status } = req.body;
+  const trackingCode = generateTrackingCode();
+  parcels.push({ trackingCode, sender, recipient, origin, destination, status: status || "Pending", checkpoints: [] });
+  res.redirect("/admin/dashboard");
+});
+
+// Update parcel
+app.post("/admin/update-parcel", (req, res) => {
+  if (!req.session.admin) return res.redirect("/admin/login");
+  const { trackingCode, status, checkpoint } = req.body;
+  const parcel = parcels.find(p => p.trackingCode === trackingCode);
+  if (parcel) {
+    if (status) parcel.status = status;
+    if (checkpoint) parcel.checkpoints.push(checkpoint);
+  }
+  res.redirect("/admin/dashboard");
+});
+
+// Client tracking page
+app.get("/track", (req, res) => {
+  res.render("track", { parcel: null });
+});
+
+app.post("/track", (req, res) => {
+  const { trackingCode } = req.body;
+  const parcel = parcels.find(p => p.trackingCode === trackingCode);
+  res.render("track", { parcel });
+});
+
+// Logout
+app.get("/admin/logout", (req, res) => {
+  req.session.destroy();
+  res.redirect("/admin/login");
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
