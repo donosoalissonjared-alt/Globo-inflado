@@ -1,0 +1,486 @@
+```javascript
+import React, { useState } from 'react';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  ScrollView,
+  TextInput,
+  Button
+} from 'react-native';
+
+const MindPlanApp = () => {
+  const [activeTab, setActiveTab] = useState('rotina');
+  const [emocao, setEmocao] = useState('');
+  const [sugestoes, setSugestoes] = useState([]);
+  const [tarefas, setTarefas] = useState([
+    { id: 1, tarefa: 'Lavar louça', responsavel: 'João', concluida: false },
+    { id: 2, tarefa: 'Limpar quarto', responsavel: 'Maria', concluida: true },
+    { id: 3, tarefa: 'Compras', responsavel: 'Pedro', concluida: false }
+  ]);
+
+  // Função para gerar rotina automática
+  const gerarRotina = () => {
+    alert('Rotina inteligente gerada!');
+  };
+
+  // Função para análise emocional
+  const analisarEmocao = (emocaoSelecionada) => {
+    const sugestoesMap = {
+      '😊 Feliz': ['Continue assim!', 'Compartilhe sua energia positiva'],
+      '😢 Triste': ['Pausa para música relaxante', 'Respiração profunda', 'Chá quente'],
+      '😰 Ansioso': ['Exercício de respiração 4-7-8', 'Meditação guiada 5min'],
+      '😴 Cansado': ['Pausa de 15min', 'Alongamento rápido', 'Hidratação'],
+      '😤 Estressado': ['Pausa imediata', 'Caminhada de 5min', 'Água gelada no rosto']
+    };
+    setEmocao(emocaoSelecionada);
+    setSugestoes(sugestoesMap[emocaoSelecionada] || []);
+  };
+
+  // Componente de Rotina Inteligente
+  const RotinaInteligente = () => (
+    <View style={styles.screen}>
+      <Text style={styles.title}>📅 Rotina Inteligente</Text>
+      
+      <View style={styles.agenda}>
+        <TimeBlock hora="07:00" atividade="Meditação" tipo="descanso" />
+        <TimeBlock hora="08:00" atividade="Café da Manhã" tipo="alimentacao" />
+        <TimeBlock hora="09:00" atividade="Estudo/ Trabalho" tipo="estudo" />
+        <TimeBlock hora="12:00" atividade="Almoço" tipo="pausa" />
+        <TimeBlock hora="14:00" atividade="Trabalho Foco" tipo="trabalho" />
+        <TimeBlock hora="16:00" atividade="Pausa Ativa" tipo="descanso" />
+        <TimeBlock hora="18:00" atividade="Treino" tipo="exercicio" />
+        <TimeBlock hora="20:00" atividade="Jantar" tipo="alimentacao" />
+        <TimeBlock hora="22:00" atividade="Relaxar" tipo="descanso" />
+      </View>
+      
+      <TouchableOpacity style={styles.botao} onPress={gerarRotina}>
+        <Text style={styles.botaoTexto}>🔄 Gerar Rotina Automática</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Componente de bloco de tempo
+  const TimeBlock = ({ hora, atividade, tipo }) => (
+    <View style={[styles.timeBlock, styles[tipo]]}>
+      <Text style={styles.hora}>{hora}</Text>
+      <Text style={styles.atividade}>{atividade}</Text>
+    </View>
+  );
+
+  // Componente Emocional
+  const LembretesEmocionais = () => {
+    const emocoes = ['😊 Feliz', '😢 Triste', '😰 Ansioso', '😴 Cansado', '😤 Estressado'];
+
+    return (
+      <View style={styles.screen}>
+        <Text style={styles.title}>😊 Como você está se sentindo?</Text>
+        
+        <ScrollView>
+          {emocoes.map(emo => (
+            <TouchableOpacity 
+              key={emo} 
+              style={[
+                styles.emocaoItem, 
+                emocao === emo && styles.emocaoSelecionada
+              ]}
+              onPress={() => analisarEmocao(emo)}
+            >
+              <Text style={styles.emocaoTexto}>{emo}</Text>
+            </TouchableOpacity>
+          ))}
+          
+          {sugestoes.length > 0 && (
+            <View style={styles.sugestoesContainer}>
+              <Text style={styles.sugestoesTitulo}>Sugestões para você:</Text>
+              {sugestoes.map((sug, index) => (
+                <Text key={index} style={styles.sugestao}>💡 {sug}</Text>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // Componente de Tarefas Domésticas
+  const OrganizadorTarefas = () => {
+    const toggleTarefa = (id) => {
+      setTarefas(tarefas.map(tarefa => 
+        tarefa.id === id 
+          ? { ...tarefa, concluida: !tarefa.concluida } 
+          : tarefa
+      ));
+    };
+
+    return (
+      <View style={styles.screen}>
+        <Text style={styles.title}>🏠 Tarefas Domésticas</Text>
+        
+        <ScrollView>
+          {tarefas.map(item => (
+            <View key={item.id} style={styles.tarefaItem}>
+              <View style={styles.tarefaInfo}>
+                <Text style={[
+                  styles.tarefaTexto,
+                  item.concluida && styles.tarefaConcluida
+                ]}>
+                  {item.tarefa}
+                </Text>
+                <Text style={styles.responsavel}>👤 {item.responsavel}</Text>
+              </View>
+              
+              <TouchableOpacity 
+                style={[
+                  styles.concluirBtn,
+                  item.concluida && styles.concluidoBtn
+                ]}
+                onPress={() => toggleTarefa(item.id)}
+              >
+                <Text style={styles.concluirTexto}>
+                  {item.concluida ? '✅' : '⏳'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </ScrollView>
+        
+        <TouchableOpacity style={styles.botao}>
+          <Text style={styles.botaoTexto}>🎯 Distribuir Tarefas Automaticamente</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  // Componente de Calendário (simplificado)
+  const Calendario = () => {
+    const tarefasDiarias = [
+      { id: 1, nome: 'Treino diário', horario: '18:00', concluida: false },
+      { id: 2, nome: 'Estudo diário', horario: '09:00', concluida: true },
+      { id: 3, nome: 'Meditação', horario: '07:00', concluida: false }
+    ];
+
+    return (
+      <View style={styles.screen}>
+        <Text style={styles.title}>📆 Calendário</Text>
+        
+        <View style={styles.calendarioHeader}>
+          <Text style={styles.dataAtual}>Outubro 2024</Text>
+        </View>
+        
+        <View style={styles.tarefasSection}>
+          <Text style={styles.subtitle}>Tarefas Diárias</Text>
+          
+          {tarefasDiarias.map(tarefa => (
+            <View key={tarefa.id} style={styles.tarefaDiaria}>
+              <View style={styles.tarefaDiariaInfo}>
+                <Text style={styles.tarefaDiariaNome}>{tarefa.nome}</Text>
+                <Text style={styles.tarefaDiariaHorario}>🕒 {tarefa.horario}</Text>
+              </View>
+              <Text style={styles.status}>
+                {tarefa.concluida ? '✅ Concluída' : '⭕ Pendente'}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
+  // Barra de Navegação
+  const NavigationBar = () => {
+    const tabs = [
+      { key: 'rotina', icon: '📅', label: 'Rotina' },
+      { key: 'emocional', icon: '😊', label: 'Emoções' },
+      { key: 'tarefas', icon: '🏠', label: 'Tarefas' },
+      { key: 'calendario', icon: '📆', label: 'Calendário' }
+    ];
+
+    return (
+      <View style={styles.navBar}>
+        {tabs.map(tab => (
+          <TouchableOpacity 
+            key={tab.key} 
+            style={[
+              styles.navItem, 
+              activeTab === tab.key && styles.navItemActive
+            ]}
+            onPress={() => setActiveTab(tab.key)}
+          >
+            <Text style={styles.navIcon}>{tab.icon}</Text>
+            <Text style={styles.navLabel}>{tab.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
+  // Header
+  const Header = () => (
+    <View style={styles.header}>
+      <Text style={styles.headerTitle}>MindPlan</Text>
+      <Text style={styles.headerDate}>
+        {new Date().toLocaleDateString('pt-BR', { 
+          weekday: 'long', 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        })}
+      </Text>
+    </View>
+  );
+
+  // Render Principal
+  return (
+    <View style={styles.container}>
+      <Header />
+      
+      <View style={styles.content}>
+        {activeTab === 'rotina' && <RotinaInteligente />}
+        {activeTab === 'emocional' && <LembretesEmocionais />}
+        {activeTab === 'tarefas' && <OrganizadorTarefas />}
+        {activeTab === 'calendario' && <Calendario />}
+      </View>
+      
+      <NavigationBar />
+    </View>
+  );
+};
+
+// ESTILOS
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  header: {
+    backgroundColor: '#6C63FF',
+    padding: 25,
+    paddingTop: 50,
+    alignItems: 'center',
+  },
+  headerTitle: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 5,
+  },
+  headerDate: {
+    fontSize: 16,
+    color: 'white',
+    opacity: 0.9,
+  },
+  content: {
+    flex: 1,
+  },
+  screen: {
+    flex: 1,
+    padding: 20,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    color: '#333',
+    textAlign: 'center',
+  },
+  // Estilos para Rotina
+  agenda: {
+    marginBottom: 20,
+  },
+  timeBlock: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    marginVertical: 5,
+    borderRadius: 12,
+    backgroundColor: 'white',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  hora: {
+    fontWeight: 'bold',
+    fontSize: 16,
+    color: '#333',
+  },
+  atividade: {
+    fontSize: 16,
+    color: '#666',
+  },
+  descanso: { borderLeftWidth: 4, borderLeftColor: '#4CAF50' },
+  estudo: { borderLeftWidth: 4, borderLeftColor: '#2196F3' },
+  trabalho: { borderLeftWidth: 4, borderLeftColor: '#FF9800' },
+  exercicio: { borderLeftWidth: 4, borderLeftColor: '#E91E63' },
+  alimentacao: { borderLeftWidth: 4, borderLeftColor: '#9C27B0' },
+  // Estilos para Emoções
+  emocaoItem: {
+    padding: 20,
+    backgroundColor: 'white',
+    marginVertical: 8,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#e0e0e0',
+  },
+  emocaoSelecionada: {
+    borderColor: '#6C63FF',
+    backgroundColor: '#f0f0ff',
+  },
+  emocaoTexto: {
+    fontSize: 18,
+    textAlign: 'center',
+  },
+  sugestoesContainer: {
+    marginTop: 20,
+    padding: 15,
+    backgroundColor: '#e3f2fd',
+    borderRadius: 12,
+  },
+  sugestoesTitulo: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: '#1565C0',
+  },
+  sugestao: {
+    fontSize: 16,
+    marginVertical: 5,
+    color: '#333',
+  },
+  // Estilos para Tarefas
+  tarefaItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 15,
+    marginVertical: 8,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  tarefaInfo: {
+    flex: 1,
+  },
+  tarefaTexto: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  tarefaConcluida: {
+    textDecorationLine: 'line-through',
+    color: '#999',
+  },
+  responsavel: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 5,
+  },
+  concluirBtn: {
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+  },
+  concluidoBtn: {
+    backgroundColor: '#e8f5e8',
+  },
+  concluirTexto: {
+    fontSize: 18,
+  },
+  // Estilos para Calendário
+  calendarioHeader: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  dataAtual: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  tarefasSection: {
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+  },
+  subtitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    color: '#333',
+  },
+  tarefaDiaria: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  tarefaDiariaInfo: {
+    flex: 1,
+  },
+  tarefaDiariaNome: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  tarefaDiariaHorario: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  status: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // Navegação
+  navBar: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#ddd',
+  },
+  navItem: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 8,
+  },
+  navItemActive: {
+    backgroundColor: '#f0f0ff',
+  },
+  navIcon: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  navLabel: {
+    fontSize: 12,
+    color: '#666',
+  },
+  // Botões
+  botao: {
+    backgroundColor: '#6C63FF',
+    padding: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  botaoTexto: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
+
+export default MindPlanApp;
+```
