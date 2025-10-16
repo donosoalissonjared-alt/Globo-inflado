@@ -1,0 +1,59 @@
+# Text DAT: MyAppExt
+# Extension class for TouchDesigner component
+# Usage: comp.MyAppExt.do_something()
+
+import json
+import os
+
+class MyAppExt:
+    def __init__(self, ownerComp):
+        self.owner = ownerComp
+        # parámetros expuestos en el componente (promote them in parameter dialog)
+        self.param_slider = ownerComp.par.Slider  # asume que tienes un parámetro llamado 'Slider'
+        self.param_toggle = ownerComp.par.Toggle  # asume que tienes un parámetro 'Toggle'
+        self.presets_file = os.path.join(op('local:/'), 'presets.json')
+
+    def set_slider(self, value: float):
+        try:
+            self.param_slider.val = float(value)
+        except Exception as e:
+            debug('set_slider error:', e)
+
+    def toggle(self, state: bool):
+        self.param_toggle.val = bool(state)
+
+    def save_preset(self, name='preset'):
+        data = {
+            'slider': float(self.param_slider.eval()),
+            'toggle': bool(self.param_toggle.eval())
+        }
+        # lee existentes
+        presets = {}
+        if os.path.exists(self.presets_file):
+            try:
+                with open(self.presets_file, 'r') as f:
+                    presets = json.load(f)
+            except Exception as e:
+                debug('load presets error', e)
+        presets[name] = data
+        with open(self.presets_file, 'w') as f:
+            json.dump(presets, f, indent=2)
+        return True
+
+    def load_preset(self, name='preset'):
+        if not os.path.exists(self.presets_file):
+            return False
+        with open(self.presets_file, 'r') as f:
+            presets = json.load(f)
+        p = presets.get(name)
+        if not p:
+            return False
+        self.set_slider(p.get('slider', 0.0))
+        self.toggle(p.get('toggle', False))
+        return True
+
+    def do_heartbeat(self):
+        # ejemplo: función llamada periódicamente desde un Timer CHOP
+        # puedes actualizar vis / enviar datos por OSC/MQTT aquí
+        now = absTime.seconds
+        self.owner.par.Heartbeat = now
