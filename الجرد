@@ -1,0 +1,126 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+
+void main() {
+  runApp(CoffeeInventoryApp());
+}
+
+class CoffeeInventoryApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Coffee Inventory',
+      theme: ThemeData(primarySwatch: Colors.brown),
+      home: InventoryPage(),
+    );
+  }
+}
+
+class InventoryItem {
+  String date;
+  String type;
+  double price;
+  int received;
+  int delivered;
+
+  InventoryItem({
+    required this.date,
+    required this.type,
+    required this.price,
+    required this.received,
+    required this.delivered,
+  });
+
+  int get sold => received - delivered;
+  double get total => sold * price;
+}
+
+class InventoryPage extends StatefulWidget {
+  @override
+  _InventoryPageState createState() => _InventoryPageState();
+}
+
+class _InventoryPageState extends State<InventoryPage> {
+  final List<InventoryItem> items = [];
+
+  final _typeController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _receivedController = TextEditingController();
+  final _deliveredController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Coffee Inventory'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.picture_as_pdf),
+            onPressed: _exportPDF,
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(8),
+            child: Column(
+              children: [
+                TextField(controller: _typeController, decoration: InputDecoration(labelText: 'الصنف')),
+                TextField(controller: _priceController, decoration: InputDecoration(labelText: 'السعر'), keyboardType: TextInputType.number),
+                TextField(controller: _receivedController, decoration: InputDecoration(labelText: 'الاستلام'), keyboardType: TextInputType.number),
+                TextField(controller: _deliveredController, decoration: InputDecoration(labelText: 'التسليم'), keyboardType: TextInputType.number),
+                SizedBox(height: 10),
+                ElevatedButton(onPressed: _addItem, child: Text('أضف الصنف'))
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return ListTile(
+                  title: Text('${item.type} - ${item.date}'),
+                  subtitle: Text('المبيع: ${item.sold}, المجموع: ${item.total}'),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addItem() {
+    final now = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final type = _typeController.text;
+    final price = double.tryParse(_priceController.text) ?? 0;
+    final received = int.tryParse(_receivedController.text) ?? 0;
+    final delivered = int.tryParse(_deliveredController.text) ?? 0;
+
+    setState(() {
+      items.add(InventoryItem(date: now, type: type, price: price, received: received, delivered: delivered));
+      _typeController.clear();
+      _priceController.clear();
+      _receivedController.clear();
+      _deliveredController.clear();
+    });
+  }
+
+  void _exportPDF() async {
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.Page(
+        build: (pw.Context context) => pw.Column(
+          children: items.map((item) => pw.Text('${item.date} | ${item.type} | ${item.price} | الاستلام: ${item.received} | التسليم: ${item.delivered} | المبيع: ${item.sold} | المجموع: ${item.total}')).toList(),
+        ),
+      ),
+    );
+
+    await Printing.layoutPdf(onLayout: (format) => pdf.save());
+  }
+}
