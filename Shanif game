@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Multiplayer Tap Game</title>
+  <style>
+    body { text-align:center; background-color:#111; color:white; font-family:Arial; }
+    button { padding:15px 30px; font-size:20px; margin-top:20px; background:#00aaff; border:none; border-radius:10px; color:white; }
+    button:active { background:#0088cc; transform:scale(0.95); }
+    #scores { margin-top:20px; white-space:pre-line; }
+  </style>
+</head>
+<body>
+  <h1>Multiplayer Tap Game</h1>
+  <h2 id="score">Your Score: 0</h2>
+  <button id="tapButton">Tap Me!</button>
+  <div id="scores">Other Players’ Scores:</div>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <script>
+    // 🔹 STEP 1: Put your Firebase info here
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL: "YOUR_DATABASE_URL",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let score = 0;
+    const playerID = "player" + Math.floor(Math.random() * 10000);
+    const scoreDisplay = document.getElementById("score");
+    const scoresDiv = document.getElementById("scores");
+    const button = document.getElementById("tapButton");
+
+    // 🔹 STEP 2: Tap function
+    button.onclick = function() {
+      score++;
+      scoreDisplay.innerText = "Your Score: " + score;
+      db.ref("scores/" + playerID).set(score); // send score to Firebase
+    };
+
+    // 🔹 STEP 3: Listen to all players’ scores
+    db.ref("scores").on("value", function(snapshot){
+      const allScores = snapshot.val();
+      let text = "";
+      for (let p in allScores) {
+        text += p + ": " + allScores[p] + "\n";
+      }
+      scoresDiv.innerText = "Other Players’ Scores:\n" + text;
+    });
+  </script>
+</body>
+</html>
