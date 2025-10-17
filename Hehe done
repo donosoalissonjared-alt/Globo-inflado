@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Voxel Prototype — Mini Minecraft</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <style>
+    html,body { height:100%; margin:0; overflow:hidden; background:#111; color:#ddd; font-family:Arial,Helvetica,sans-serif; }
+    #overlay {
+      position: absolute; top:10px; left:10px; z-index:10;
+      background: rgba(0,0,0,0.35); padding:8px 10px; border-radius:6px;
+      font-size:13px;
+    }
+    #crosshair {
+      position: absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+      width:18px; height:18px; pointer-events:none; z-index:9;
+      mix-blend-mode:screen;
+    }
+    #crosshair:before,#crosshair:after {
+      content:""; position:absolute; left:50%; top:50%; background:#fff;
+      width:2px; height:10px; transform:translate(-50%,-50%);
+    }
+    #crosshair:after { width:10px; height:2px; transform:translate(-50%,-50%) rotate(90deg); }
+    #instructions {
+      position:absolute; bottom:12px; left:12px; background:rgba(0,0,0,0.35); padding:8px 10px; border-radius:6px; font-size:13px;
+    }
+    button#start {
+      display:block; margin-top:6px; padding:6px 10px; border-radius:4px; border:0; cursor:pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div>Blocks: <span id="currentBlock">1</span> (1:dirt 2:grass 3:stone 4:wood)</div>
+    <div id="fps">FPS: --</div>
+    <div style="margin-top:6px;">Left click: remove · Right click: place</div>
+    <button id="start">Click to Start (pointer lock)</button>
+  </div>
+  <div id="crosshair"></div>
+  <div id="instructions">WASD: move · Space: jump · Shift: walk</div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
+    import { PointerLockControls } from 'https://unpkg.com/three@0.152.2/examples/jsm/controls/PointerLockControls.js';
+
+    // Basic scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb); // sky-blue
+
+    const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+    camera.position.set(8, 6, 16);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio ? Math.min(window.devicePixelRatio, 2) : 1);
+    document.body.appendChild(renderer.domElement);
+
+    // Lights
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9);
+    hemi.position.set(0, 50, 0);
+    scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.6);
+    dir.position.set(-10, 20, 5);
+    scene.add(dir);
+
+    // Controls (pointer lock)
+    const controls = new PointerLockControls(camera, document.body);
+    const startBtn = document.getElementById('start');
+    startBtn.addEventListener('click', ()=> controls.lock());
+    controls.addEventListener('lock', ()=> startBtn.style.display='none');
+    controls.addEventListener('unlock', ()=> startBtn.style.display='block');
+    scene.add(controls.getObject());
+
+    // world size (small chunk)
+    const WIDTH = 16, HEIGHT = 8, DEPTH = 16;
+    const world = new Uint8Array(WIDTH*HEIGHT*DEPTH); // 0 = air, 1.. = block type
+
+    // simple palette (colors)
+    const palette = {
+      1: { name:'dirt', color:0x8B5A2B },
+      2: { name:'grass', color:0x2DAE2D },
+      3: { name:'stone', color:0x8a8a8a },
+      4: { name:'wood',  color:0xA0522D }
+    };
+
+    // helpers for indexing
+    function idx(x,y,z){ return (y*DEPTH + z)*WIDTH + x; }
+    function inBounds(x,y,z){ return x>=0&&x<WIDTH&&y>=0&&y<HEIGHT&&z>=0&&z<DEPTH; }
+
+    // generate simple terrain: ground layer + hills
+    for(let x=0;x<WIDTH;x++){
+      for(let z=0;z<DEPTH;z++){
+        const height = 2 + Math.floor(Math.sin(x*0.6)+Math.cos(z*0.45) + Math.random()*0.8);
+        for(let y=0;y<HEIGHT;y++){
+          if(y <= height) {
+            const t = (y===height) ? 2 : 1; // top is grass (2) else dirt (1)
+            world[idx(x,y,z)] = t;
+          }
+        }
+      }
+    }
+    // add a few stone/wood blobs
+    for(let i=0;i<200;i++){
+      const x = Math.floor(Math.random()*WIDTH), z = Math.floor(Math.random()*DEPTH), y = Math.floor(Math.random()*HEIGHT);
+      world[idx(x,y,z)] = (Math.random()<0.2?3:world[idx(x,y,z)]);
+    }
+
+    // Geometry + materials reused
+    const boxGeom = new THREE.BoxGeometry(1,1,1);
+    const materials = {};
+    for(const k of Object.keys(palette)){
+      materials[k] = new THREE.MeshStandardMaterial({ color: palette[k].color });
+    }
+
+    // Group holding all block meshes
+    const blocksGroup = new THREE.Group();
+    scene.add(blocksGroup);
+
+    // Build meshes (one mesh per block) — small chunk so ok for prototype
+    function rebuildMeshes(){
+      // remove old
+      while(blocksGroup.children.length) blocksGroup.remove(blocksGroup.children[0]);
+      for(let x=0;x<WIDTH;x++){
+        for(let y=0;y<HEIGHT;y++){
+          for(let z=0;z<DEPTH;z++){
+            const t = world[idx(x,y,z)];
+            if(t>0){
+              const mesh = new THREE.Mesh(boxGeom, materials[t]);
+              mesh.position.set(x + 0.5 - WIDTH/2, y + 0.5, z + 0.5 - DEPTH/2);
+              mesh.userData = { x, y, z, t };
+              blocksGroup.add(mesh);
+            }
+          }
+        }
+      }
+    }
+    rebuildMeshes();
+
+    // Add a faint grid ground plane for reference
+    const grid = new THREE.GridHelper(50, 50, 0x000000, 0x000000);
+    grid.material.opacity = 0.08; grid.material.transparent = true;
+    grid.position.y = -0.01;
+    scene.add(grid);
+
+    // Raycaster for block placement/removal
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    // block selection
+    let currentBlock = 1;
+    document.getElementById('currentBlock').innerText = currentBlock;
+
+    window.addEventListener('keydown', (e)=>{
+      if(e.key >= '1' && e.key <= '4'){ currentBlock = Number(e.key); document.getElementById('currentBlock').innerText = currentBlock; }
+    });
+
+    // Movement variables
+    const move = { forward:false, backward:false, left:false, right:false };
+    let velocity = new THREE.Vector3();
+    let canJump = false;
+    let prevTime = performance.now();
+
+    // Movement input
+    const onKeyDown = function ( event ) {
+      switch ( event.code ) {
+        case 'ArrowUp':
+        case 'KeyW':
+          move.forward = true;
+          break;
+        case 'ArrowLeft':
+        case 'KeyA':
+          move.left = true;
+          break;
+        case 'ArrowDown':
+        case 'KeyS':
+          move.backward = true;
+          break;
+        case 'ArrowRight':
+        case 'KeyD':
+          move.right = true;
+          break;
+        case 'Space':
+          if ( canJump === true ) velocity.y += 6;
+          canJump = false;
+          break;
+      }
+    };
+    const onKeyUp = function ( event ) {
+      switch ( event.code ) {
+        case 'ArrowUp':
+        case 'KeyW':
+          move.forward = false;
+          break;
+        case 'ArrowLeft':
+        case 'KeyA':
+          move.left = false;
+          break;
+        case 'ArrowDown':
+        case 'KeyS':
+          move.backward = false;
+          break;
+        case 'ArrowRight':
+        case 'KeyD':
+          move.right = false;
+          break;
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+
+    // Interaction: left click remove, right click place
+    function screenToRay(x,y){
+      mouse.x = ( x / innerWidth ) * 2 - 1;
+      mouse.y = - ( y / innerHeight ) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+    }
+
+    function worldIndexFromMesh(mesh){
+      return mesh.userData && mesh.userData.x !== undefined ? [mesh.userData.x, mesh.userData.y, mesh.userData.z] : null;
+    }
+
+    // Left click (remove)
+    window.addEventListener('mousedown', (ev)=>{
+      if(!controls.isLocked) return;
+      ev.preventDefault();
+      const centerX = innerWidth/2, centerY = innerHeight/2;
+      screenToRay(centerX, centerY);
+      const intersects = raycaster.intersectObjects(blocksGroup.children, false);
+      if(intersects.length>0){
+        const hit = intersects[0];
+        if(ev.button === 0){
+          // remove block
+          const p = worldIndexFromMesh(hit.object);
+          if(p){
+            const [x,y,z] = p;
+            world[idx(x,y,z)] = 0;
+            rebuildMeshes();
+          }
+        } else if(ev.button === 2){
+          // place block adjacent: hit.face.normal gives which face; compute neighbor cell
+          const normal = hit.face.normal.clone();
+          // rotate normal to world orientation (hit.object has no rotation so fine)
+          const px = Math.round(hit.object.position.x - 0.5 + WIDTH/2);
+          const py = Math.round(hit.object.position.y - 0.5);
+          const pz = Math.round(hit.object.position.z - 0.5 + DEPTH/2);
+          const nx = px + Math.round(normal.x);
+          const ny = py + Math.round(normal.y);
+          const nz = pz + Math.round(normal.z);
+          if(inBounds(nx,ny,nz) && world[idx(nx,ny,nz)]===0){
+            world[idx(nx,ny,nz)] = currentBlock;
+            rebuildMeshes();
+          }
+        }
+      }
+    });
+
+    // prevent context menu on right click
+    window.addEventListener('contextmenu', (e)=> e.preventDefault());
+
+    // Simple collision: if camera y <= some, set position
+    function checkGroundAndCollisions(){
+      // compute approximate player grid position under camera
+      const px = Math.floor(camera.position.x + WIDTH/2);
+      const pz = Math.floor(camera.position.z + DEPTH/2);
+      const py = Math.floor(camera.position.y);
+      // if below 0, clamp
+      if(camera.position.y < 0.5) camera.position.y = 0.5;
+      // prevent moving into blocks roughly: if camera's new position intersects a voxel, push back (very rough)
+      // For prototype keep simple: if camera is inside a block (world at camera's integer triple), raise camera above it
+      const ix = Math.floor(camera.position.x + WIDTH/2);
+      const iy = Math.floor(camera.position.y);
+      const iz = Math.floor(camera.position.z + DEPTH/2);
+      if(inBounds(ix,iy,iz) && world[idx(ix,iy,iz)]>0){
+        camera.position.y = iy + 1.6;
+        velocity.y = 0;
+      }
+    }
+
+    // FPS counter
+    const fpsEl = document.getElementById('fps');
+
+    // animate
+    function animate(){
+      requestAnimationFrame(animate);
+      const time = performance.now();
+      const delta = (time - prevTime) / 1000;
+      if(controls.isLocked){
+        // movement
+        const speed = (document.activeElement && document.activeElement === document.body && (window.event && window.event.shiftKey)) ? 2 : 6;
+        velocity.x -= velocity.x * 10.0 * delta;
+        velocity.z -= velocity.z * 10.0 * delta;
+        velocity.y -= 9.8 * delta; // gravity
+
+        const dir = new THREE.Vector3();
+        if(move.forward) dir.z -= 1;
+        if(move.backward) dir.z += 1;
+        if(move.left) dir.x -= 1;
+        if(move.right) dir.x += 1;
+        dir.normalize();
+
+        if(dir.length()>0){
+          // transform dir by camera rotation (y only)
+          const e = camera.rotation;
+          const yaw = controls.getObject().rotation.y;
+          const forward = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+          const right = new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+          const moveVec = forward.multiplyScalar(dir.z).add(right.multiplyScalar(dir.x));
+          velocity.x += moveVec.x * speed * delta * 10;
+          velocity.z += moveVec.z * speed * delta * 10;
+        }
+
+        controls.getObject().position.x += velocity.x * delta;
+        controls.getObject().position.y += velocity.y * delta;
+        controls.getObject().position.z += velocity.z * delta;
+
+        if(controls.getObject().position.y < 1.6){
+          velocity.y = 0;
+          controls.getObject().position.y = 1.6;
+          canJump = true;
+        }
+
+        // sync camera position to controls (camera is child)
+        camera.position.copy(controls.getObject().position);
+
+        checkGroundAndCollisions();
+      }
+
+      renderer.render(scene, camera);
+
+      // FPS update
+      fpsEl.innerText = 'FPS: ' + Math.round(1000 / Math.max(1, time - prevTime));
+      prevTime = time;
+    }
+
+    animate();
+
+    // Handle resize
+    window.addEventListener('resize', ()=>{
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // Small help: show currentBlock change visually
+    // already updating text on key press
+
+    // Minimal performance note:
+    // This prototype uses a mesh per block (simple for small chunks). For larger worlds, use instanced meshes / greedy meshing / chunks.
+  </script>
+</body>
+</html>
