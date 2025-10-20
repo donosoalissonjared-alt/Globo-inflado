@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Happy Birthday My Love</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Great+Vibes&family=Roboto:wght@400;500&display=swap');
+
+  body {
+    margin: 0;
+    height: 100vh;
+    font-family: 'Roboto', sans-serif;
+    color: #fff;
+    background: linear-gradient(to bottom, #FF9A8B, #FF6A88, #B06AB3, #6A82FB);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .stars {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+  }
+
+  .star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: white;
+    border-radius: 50%;
+    opacity: 0.8;
+    animation: twinkle 2s infinite alternate;
+  }
+
+  @keyframes twinkle {
+    from {opacity: 0.2;}
+    to {opacity: 1;}
+  }
+
+  .moon-sun {
+    position: absolute;
+    font-size: 4em;
+    animation: float 6s ease-in-out infinite alternate;
+  }
+
+  .moon { left: 20%; top: 10%; }
+  .sun { right: 20%; top: 15%; }
+
+  @keyframes float {
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(15px); }
+    100% { transform: translateY(0px); }
+  }
+
+  .container {
+    max-width: 700px;
+    text-align: center;
+    padding: 30px 20px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 20px;
+    box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    z-index: 2;
+    position: relative;
+  }
+
+  h1 {
+    font-family: 'Great Vibes', cursive;
+    font-size: 3em;
+    margin-bottom: 20px;
+  }
+
+  p {
+    font-size: 1.2em;
+    line-height: 1.6;
+    margin-bottom: 15px;
+    min-height: 24px;
+  }
+
+  .signature {
+    font-style: italic;
+    margin-top: 20px;
+    font-size: 1.5em;
+  }
+</style>
+</head>
+<body>
+
+<!-- نجوم -->
+<div class="stars" id="stars"></div>
+
+<!-- الشمس والقمر -->
+<div class="moon-sun moon">🌙</div>
+<div class="moon-sun sun">☀️</div>
+
+<!-- الصوت -->
+<audio autoplay loop>
+  <source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_09a788e24f.mp3?filename=until-i-found-you-143358.mp3" type="audio/mpeg">
+</audio>
+
+<div class="container">
+  <h1>Happy Birthday, My Love 🌅</h1>
+  <p id="message"></p>
+  <div class="signature">From your soul twin,<br>Tuqa 🤍</div>
+</div>
+
+<script>
+  // الرسالة كاملة
+  const text = `To my favorite person, on his special day 💫
+  
+Happy Birthday, my love. You are that rare kind of soul that makes the world stop for a moment — the kind that turns ordinary seconds into something magical.
+
+Even from far away, I feel you. In quiet nights, in soft songs, in the sky when it blushes at sunset — it’s all you.
+
+You taught me what warmth feels like without even being here. You are my calm after the storm, my reason to smile on hard days, and the voice my heart recognizes even in silence.
+
+I hope this day wraps you in the love you’ve given so freely, that it reminds you how deeply you are seen, known, and cherished.
+
+You are my favorite story, my safest home, and the most beautiful coincidence the universe ever gave me.
+
+My wish for you this year is peace, growth, and the kind of happiness that stays — the kind that we create together.`;
+
+  const messageElement = document.getElementById('message');
+  let index = 0;
+
+  function typeWriter() {
+    if (index < text.length) {
+      messageElement.innerHTML += text.charAt(index);
+      index++;
+      setTimeout(typeWriter, 35);
+    }
+  }
+
+  typeWriter();
+
+  // توليد نجوم عشوائية
+  const starsContainer = document.getElementById('stars');
+  for (let i = 0; i < 100; i++) {
+    const star = document.createElement('div');
+    star.className = 'star';
+    star.style.top = Math.random() * 100 + '%';
+    star.style.left = Math.random() * 100 + '%';
+    star.style.animationDuration = (Math.random() * 3 + 1) + 's';
+    starsContainer.appendChild(star);
+  }
+</script>
+
+</body>
+</html>
