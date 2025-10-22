@@ -1,0 +1,55 @@
+const express = require('express');
+const app = express();
+const http = require('http').createServer(app);
+const io = require('socket.io')(http);
+
+app.use(express.static('public')); // serve client files
+
+const PORT = process.env.PORT || 3000;
+
+// Game state
+let players = {};
+let bullets = [];
+
+io.on('connection', socket => {
+  console.log('Player connected:', socket.id);
+
+  // Add new player
+  players[socket.id] = {
+    id: socket.id,
+    x: Math.random() * 800 + 50,
+    y: Math.random() * 500 + 50,
+    hp: 100,
+    score: 0
+  };
+
+  // Send current state to the new player
+  socket.emit('currentPlayers', players);
+  socket.broadcast.emit('newPlayer', players[socket.id]);
+
+  // Receive player movement
+  socket.on('playerMovement', data => {
+    if(players[socket.id]){
+      players[socket.id].x = data.x;
+      players[socket.id].y = data.y;
+    }
+    io.emit('playerUpdates', players);
+  });
+
+  // Receive shooting
+  socket.on('shootBullet', bullet => {
+    bullets.push({...bullet, owner: socket.id});
+    io.emit('bulletUpdates', bullets);
+  });
+
+  // Handle disconnect
+  socket.on('disconnect', () => {
+    console.log('Player disconnected:', socket.id);
+    delete players[socket.id];
+    io.emit('removePlayer', socket.id);
+  });
+});
+
+http.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
