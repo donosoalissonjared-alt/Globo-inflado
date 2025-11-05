@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>The Goblin's Cave</title>
+  <style>
+    body { font-family: Georgia; background: #111; color: #eee; padding: 2em; }
+    button { margin-top: 1em; }
+  </style>
+</head>
+<body>
+  <div id="text"></div>
+  <div id="choices"></div>
+
+  <script>
+    async function show(id = "start") {
+      const res = await fetch(`/story/${id}`);
+      const data = await res.json();
+      document.getElementById("text").innerText = data.text;
+      const choicesDiv = document.getElementById("choices");
+      choicesDiv.innerHTML = "";
+
+      if (data.roll) {
+        const btn = document.createElement("button");
+        btn.innerText = "Roll d20";
+        btn.onclick = async () => {
+          const r = await fetch("/roll", { method: "POST" }).then(r=>r.json());
+          document.getElementById("text").innerText += `\nYou rolled ${r.roll}.`;
+          show(r.success ? data.nextOnSuccess : data.nextOnFail);
+        };
+        choicesDiv.appendChild(btn);
+      } else {
+        data.choices.forEach(c => {
+          const btn = document.createElement("button");
+          btn.innerText = c.text;
+          btn.onclick = () => show(c.next);
+          choicesDiv.appendChild(btn);
+        });
+      }
+    }
+    show();
+  </script>
+</body>
+</html>
