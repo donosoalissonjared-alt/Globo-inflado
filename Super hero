@@ -1,0 +1,141 @@
+// game.js – Main gameplay loop for Superhero Strike 3D: Galactic War
+import * as THREE from './three.min.js';
+import { updateEnemies, setHero } from './ai.js';
+import { loadMap } from './maps.js';
+import { initAudio, playSound } from './sounds.js';
+
+let scene, camera, renderer, hero, clock;
+let currentMap = "city";
+let moveDir = { x: 0, z: 0 };
+let flying = false;
+
+// === INITIALIZE ===
+export async function initGame() {
+  // Setup renderer and scene
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000000);
+
+  // Camera
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 500);
+  camera.position.set(0, 5, 10);
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0x404040);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight(0xffffff, 1);
+  sun.position.set(10, 20, 10);
+  sun.castShadow = true;
+  scene.add(sun);
+
+  // Hero
+  const mat = new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.5 });
+  const geo = new THREE.BoxGeometry(1, 2, 1);
+  hero = new THREE.Mesh(geo, mat);
+  hero.position.set(0, 1, 0);
+  hero.castShadow = true;
+  scene.add(hero);
+  setHero(hero);
+
+  // Map
+  loadMap(currentMap, scene);
+
+  // Audio
+  await initAudio();
+
+  // HUD
+  document.body.innerHTML += `
+    <div id="hud">Mode: CITY</div>
+    <div id="joystick"><div id="joystickHandle"></div></div>
+    <div id="btnShoot" class="btn">🔫</div>
+    <div id="btnPower" class="btn">⚡</div>
+    <div id="btnFly" class="btn">🚀</div>
+    <div id="modeToggle">Switch Mode</div>
+  `;
+
+  // Events
+  setupInput();
+  window.addEventListener("resize", onResize);
+
+  // Start loop
+  clock = new THREE.Clock();
+  animate();
+}
+
+// === INPUT HANDLING ===
+function setupInput() {
+  const joystick = document.getElementById("joystick");
+  const handle = document.getElementById("joystickHandle");
+  let active = false;
+
+  joystick.addEventListener("touchstart", e => {
+    active = true;
+  });
+  joystick.addEventListener("touchend", e => {
+    active = false;
+    handle.style.left = "45px";
+    handle.style.top = "45px";
+    moveDir.x = 0;
+    moveDir.z = 0;
+  });
+  joystick.addEventListener("touchmove", e => {
+    if (!active) return;
+    const touch = e.touches[0];
+    const rect = joystick.getBoundingClientRect();
+    const x = touch.clientX - rect.left - 60;
+    const y = touch.clientY - rect.top - 60;
+    const len = Math.min(Math.sqrt(x * x + y * y), 45);
+    const angle = Math.atan2(y, x);
+    handle.style.left = 60 + len * Math.cos(angle) - 15 + "px";
+    handle.style.top = 60 + len * Math.sin(angle) - 15 + "px";
+    moveDir.x = Math.cos(angle);
+    moveDir.z = Math.sin(angle);
+  });
+
+  document.getElementById("btnShoot").onclick = () => playSound("shoot");
+  document.getElementById("btnPower").onclick = () => playSound("power");
+  document.getElementById("btnFly").onclick = () => {
+    flying = !flying;
+    playSound("fly");
+  };
+  document.getElementById("modeToggle").onclick = () => {
+    currentMap = currentMap === "city" ? "space" : "city";
+    document.getElementById("hud").innerText = "Mode: " + currentMap.toUpperCase();
+    loadMap(currentMap, scene);
+  };
+}
+
+// === RESIZE HANDLER ===
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// === ANIMATION LOOP ===
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  // Move hero
+  hero.position.x += moveDir.x * delta * 10;
+  hero.position.z += moveDir.z * delta * 10;
+  if (flying) hero.position.y = Math.sin(Date.now() * 0.002) * 2 + 3;
+  else hero.position.y = 1;
+
+  // Camera follow
+  camera.position.lerp(
+    new THREE.Vector3(hero.position.x, hero.position.y + 5, hero.position.z + 10),
+    0.1
+  );
+  camera.lookAt(hero.position);
+
+  // Update AI
+  updateEnemies(delta);
+
+  renderer.render(scene, camera);
+}
