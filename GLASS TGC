@@ -1,0 +1,920 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+type HistoryTone = "info" | "warning" | "success";
+
+interface HistoryEntry {
+  title: string;
+  detail: string;
+  timestamp: string;
+  tone: HistoryTone;
+}
+
+interface PresetDish {
+  id: string;
+  name: string;
+  durationSeconds: number;
+  description: string;
+  heatLevel: "Low" | "Medium" | "High";
+  isCustom?: boolean;
+}
+
+const clampValue = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, value));
+
+const formatTime = (totalSeconds: number) => {
+  const safeSeconds = Math.max(totalSeconds, 0);
+  const minutes = Math.floor(safeSeconds / 60);
+  const seconds = safeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+};
+
+const formatMinutesLabel = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const remSeconds = seconds % 60;
+  return remSeconds ? `${mins} min ${remSeconds}s` : `${mins} min`;
+};
+
+const initialHistory: HistoryEntry[] = (() => {
+  const now = Date.now();
+  const toLocal = (offsetMinutes: number) =>
+    new Date(now - offsetMinutes * 60 * 1000).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  return [
+    {
+      title: "Gas line sealed",
+      detail: "System performed a cold start test — valve confirmed closed.",
+      timestamp: toLocal(18),
+      tone: "success",
+    },
+    {
+      title: "Sensor calibrated",
+      detail: "MQ-2 baseline adjusted after warm-up window.",
+      timestamp: toLocal(12),
+      tone: "info",
+    },
+    {
+      title: "Cycle preset saved",
+      detail: "Chef Lola locked in a 15 minute simmer routine.",
+      timestamp: toLocal(5),
+      tone: "info",
+    },
+  ];
+})();
+
+const presetDishes: PresetDish[] = [
+  {
+    id: "slow-simmer",
+    name: "Slow simmer stew",
+    durationSeconds: 15 * 60,
+    description: "Keeps a steady bubble without scorching stock bases.",
+    heatLevel: "Low",
+  },
+  {
+    id: "quick-saute",
+    name: "Quick sauté",
+    durationSeconds: 6 * 60,
+    description: "Short burst for vegetables and aromatics.",
+    heatLevel: "High",
+  },
+  {
+    id: "pasta-al-dente",
+    name: "Pasta al dente",
+    durationSeconds: 10 * 60,
+    description: "Guarantees pasta drains before starch release.",
+    heatLevel: "Medium",
+  },
+  {
+    id: "reheat-service",
+    name: "Service reheat",
+    durationSeconds: 8 * 60,
+    description: "Brings prepped dishes to serving temperature.",
+    heatLevel: "Medium",
+  },
+];
+
+function App() {
+  const MAX_DURATION = 60 * 60;
+  const MIN_DURATION = 60;
+  const leakThreshold = 200;
+  const maxPpm = 500;
+
+  const [cycleDuration, setCycleDuration] = useState(15 * 60);
+  const [remainingSeconds, setRemainingSeconds] = useState(15 * 60);
+  const [isRunning, setIsRunning] = useState(false);
+  const [gasLevel, setGasLevel] = useState(165);
+  const [history, setHistory] = useState<HistoryEntry[]>(initialHistory);
+  const [activePresetId, setActivePresetId] = useState<string | null>(
+    presetDishes.find((preset) => preset.durationSeconds === 15 * 60)?.id ?? null
+  );
+
+  const [customPresets, setCustomPresets] = useState<PresetDish[]>([]);
+  const [isAddingPreset, setIsAddingPreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [newPresetMinutes, setNewPresetMinutes] = useState(12);
+  const [newPresetHeat, setNewPresetHeat] =
+    useState<PresetDish["heatLevel"]>("Medium");
+  const [newPresetDescription, setNewPresetDescription] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const intervalRef = useRef<number | null>(null);
+  const leakStateRef = useRef(gasLevel >= leakThreshold);
+
+  const toTimestamp = useCallback(
+    () =>
+      new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    []
+  );
+
+  const pushHistory = useCallback(
+    (entry: Omit<HistoryEntry, "timestamp"> & { timestamp?: string }) => {
+      const timestamp = entry.timestamp ?? toTimestamp();
+      setHistory((prev) => [{ ...entry, timestamp }, ...prev].slice(0, 8));
+    },
+    [toTimestamp]
+  );
+
+  const leakDetected = gasLevel >= leakThreshold;
+
+  const progress = useMemo(() => {
+    if (!cycleDuration) return 0;
+    return Math.min(1, remainingSeconds / cycleDuration);
+  }, [cycleDuration, remainingSeconds]);
+
+  const progressPercent = Math.round(progress * 100);
+
+  const gaugeAngle = Math.min(360, (gasLevel / maxPpm) * 360);
+  const gaugeColor = leakDetected
+    ? "rgba(248, 113, 113, 0.85)"
+    : "rgba(52, 211, 153, 0.85)";
+
+  const cycleStatusLabel = leakDetected
+    ? "Leak detected"
+    : isRunning
+    ? "Cycle running"
+    : remainingSeconds === 0
+    ? "Cycle complete"
+    : "Standing by";
+
+  const valveState =
+    leakDetected || remainingSeconds === 0
+      ? "Closed"
+      : isRunning
+      ? "Open"
+      : "Standby";
+
+  const isAdjustDisabled = isRunning || leakDetected;
+
+  const startLabel = leakDetected
+    ? "Leak detected"
+    : isRunning
+    ? "Pause cycle"
+    : remainingSeconds === 0
+    ? "Restart cycle"
+    : "Start cycle";
+
+  const toneStyles: Record<HistoryTone, string> = {
+    info: "bg-cyan-300",
+    warning: "bg-orange-300",
+    success: "bg-emerald-300",
+  };
+
+  const handleAdjustDuration = (delta: number) => {
+    if (isAdjustDisabled) return;
+    const next = clampValue(
+      cycleDuration + delta,
+      MIN_DURATION,
+      MAX_DURATION
+    );
+    if (next === cycleDuration) return;
+
+    setActivePresetId(null);
+    setCycleDuration(next);
+    setRemainingSeconds(next);
+
+    pushHistory({
+      title: "Timer updated",
+      detail: `Cycle preset adjusted to ${formatMinutesLabel(next)}.`,
+      tone: "info",
+    });
+  };
+
+  const handleApplyPreset = (preset: PresetDish) => {
+    if (leakDetected || isRunning) return;
+
+    setActivePresetId(preset.id);
+    setCycleDuration(preset.durationSeconds);
+    setRemainingSeconds(preset.durationSeconds);
+    setIsRunning(false);
+
+    pushHistory({
+      title: `${preset.name} loaded`,
+      detail: `Timer set to ${formatMinutesLabel(
+        preset.durationSeconds
+      )} (${preset.heatLevel.toLowerCase()} heat).`,
+      tone: "info",
+    });
+  };
+
+  const handleCreatePreset = (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+  };
+}
+// =======================
+// Tone Styles
+// =======================
+const toneStyles: Record<HistoryTone, string> = {
+  info: "bg-cyan-300",
+  warning: "bg-orange-300",
+  success: "bg-emerald-300",
+};
+
+// =======================
+// Adjust Duration
+// =======================
+const handleAdjustDuration = (delta: number) => {
+  if (isAdjustDisabled) return;
+  const next = clampValue(cycleDuration + delta, MIN_DURATION, MAX_DURATION);
+  if (next === cycleDuration) return;
+
+  setActivePresetId(null);
+  setCycleDuration(next);
+  setRemainingSeconds(next);
+
+  pushHistory({
+    title: "Timer updated",
+    detail: `Cycle preset adjusted to ${formatMinutesLabel(next)}.`,
+    tone: "info",
+  });
+};
+
+// =======================
+// Apply Preset
+// =======================
+const handleApplyPreset = (preset: PresetDish) => {
+  if (leakDetected || isRunning) return;
+
+  setActivePresetId(preset.id);
+  setCycleDuration(preset.durationSeconds);
+  setRemainingSeconds(preset.durationSeconds);
+  setIsRunning(false);
+
+  pushHistory({
+    title: `${preset.name} loaded`,
+    detail: `Timer set to ${formatMinutesLabel(preset.durationSeconds)} (${preset.heatLevel.toLowerCase()} heat).`,
+    tone: "info",
+  });
+};
+
+// =======================
+// Create New Preset
+// =======================
+const handleCreatePreset = (event: React.FormEvent<HTMLFormElement>) => {
+  event.preventDefault();
+
+  if (leakDetected || isRunning) {
+    setFormError("Pause the cycle and clear alerts before saving new presets.");
+    return;
+  }
+
+  const trimmedName = newPresetName.trim();
+  if (!trimmedName) {
+    setFormError("Give the preset a name.");
+    return;
+  }
+
+  const duration = clampValue(newPresetMinutes * 60, MIN_DURATION, MAX_DURATION);
+  const description = newPresetDescription.trim() || "Saved from line adjustments.";
+
+  const newPreset: PresetDish = {
+    id: `custom-${Date.now()}`,
+    name: trimmedName,
+    durationSeconds: duration,
+    description,
+    heatLevel: newPresetHeat,
+    isCustom: true,
+  };
+
+  setCustomPresets((prev) => [newPreset, ...prev]);
+  setActivePresetId(newPreset.id);
+  setCycleDuration(duration);
+  setRemainingSeconds(duration);
+  setIsRunning(false);
+
+  pushHistory({
+    title: `${newPreset.name} saved`,
+    detail: `Custom preset stored at ${formatMinutesLabel(duration)} (${newPresetHeat.toLowerCase()} heat).`,
+    tone: "success",
+  });
+
+  setIsAddingPreset(false);
+  setNewPresetName("");
+  setNewPresetMinutes(12);
+  setNewPresetHeat("Medium");
+  setNewPresetDescription("");
+  setFormError(null);
+};
+
+// =======================
+// Delete Preset
+// =======================
+const handleDeletePreset = (presetId: string) => {
+  setCustomPresets((prev) => prev.filter((preset) => preset.id !== presetId));
+
+  if (activePresetId === presetId) {
+    setActivePresetId(null);
+  }
+
+  pushHistory({
+    title: "Preset removed",
+    detail: "Custom timing removed from the queue.",
+    tone: "info",
+  });
+};
+
+// =======================
+// Toggle Cycle (Start / Pause / Restart)
+// =======================
+const handleToggleCycle = () => {
+  if (leakDetected) return;
+
+  if (isRunning) {
+    setIsRunning(false);
+    pushHistory({
+      title: "Cycle paused",
+      detail: "Countdown halted — gas line holding steady.",
+      tone: "info",
+    });
+    return;
+  }
+
+  if (remainingSeconds === 0) {
+    setRemainingSeconds(cycleDuration);
+  }
+
+  pushHistory({
+    title: "Cycle started",
+    detail: `Countdown armed for ${formatMinutesLabel(cycleDuration)}.`,
+    tone: "info",
+  });
+
+  setIsRunning(true);
+};
+
+// =======================
+// Simulate Leak
+// =======================
+const handleSimulateLeak = () => {
+  pushHistory({
+    title: "Leak test triggered",
+    detail: "Operator spiked sensor to confirm emergency routine.",
+    tone: "info",
+  });
+  setGasLevel(leakThreshold + 60);
+};
+
+// =======================
+// Clear Alarm
+// =======================
+const handleClearAlarm = () => {
+  pushHistory({
+    title: "Alarm cleared",
+    detail: "Sensor reset — ventilation restored safe air mix.",
+    tone: "success",
+  });
+  setGasLevel(140);
+};
+
+// =======================
+// Timer Countdown Effect
+// =======================
+useEffect(() => {
+  if (!isRunning) {
+    if (intervalRef.current) {
+      window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    return;
+  }
+
+  if (intervalRef.current) return;
+
+  intervalRef.current = window.setInterval(() => {
+    setRemainingSeconds((prev) => {
+      if (prev <= 1) {
+        if (intervalRef.current) {
+          window.clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+
+        setIsRunning(false);
+
+        pushHistory({
+          title: "Cycle complete",
+          detail: "Solenoid sealed the gas line automatically.",
+          tone: "success",
+        });
+
+        return 0;
+      }
+
+      return prev - 1;
+    });
+  }, 1000);
+}, [isRunning]);
+
+// =======================
+// Progress + Labels
+// =======================
+const leakDetected = gasLevel >= leakThreshold;
+
+const progress = useMemo(() => {
+  if (!cycleDuration) return 0;
+  return Math.min(1, remainingSeconds / cycleDuration);
+}, [cycleDuration, remainingSeconds]);
+
+const progressPercent = Math.round(progress * 100);
+
+const gaugeAngle = Math.min(360, (gasLevel / maxPpm) * 360);
+const gaugeColor = leakDetected
+  ? "rgba(248, 113, 113, 0.85)"
+  : "rgba(52, 211, 153, 0.85)";
+
+const cycleStatusLabel = leakDetected
+  ? "Leak detected"
+  : isRunning
+  ? remainingSeconds === 0
+    ? "Cycle complete"
+    : "Cycle running"
+  : "Standing by";
+
+const valveState =
+  leakDetected || remainingSeconds === 0
+    ? "Closed"
+    : isRunning
+    ? "Open"
+    : "Standby";
+
+const isAdjustDisabled = isRunning || leakDetected;
+
+const startLabel = leakDetected
+  ? "Leak detected"
+  : isRunning
+  ? "Pause cycle"
+  : remainingSeconds === 0
+  ? "Restart cycle"
+  : "Start cycle";
+
+// =======================
+// Timestamp Helper
+// =======================
+const toTimestamp = useCallback(
+  () =>
+    new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    }),
+  []
+);
+
+// =======================
+// Push History
+// =======================
+const pushHistory = useCallback(
+  (entry: Omit<HistoryEntry, "timestamp"> & { timestamp?: string }) => {
+    const timestamp = entry.timestamp ?? toTimestamp();
+    setHistory((prev) => [{ ...entry, timestamp }, ...prev].slice(0, 8));
+  },
+  [toTimestamp]
+);
+import React from "react";
+
+export default function GasControllerUI({
+  handleAdjustDuration,
+  handleToggleCycle,
+  isAdjustDisabled,
+  isRunning,
+  leakDetected,
+  cycleDuration,
+  MIN_DURATION,
+  MAX_DURATION,
+  remainingSeconds,
+  progressPercent,
+  gasLevel,
+  valveState,
+  formatTime,
+  formatMinutesLabel,
+}) {
+  return (
+    <div className="space-y-12 p-6 text-white">
+
+      {/* ============================
+          MAIN COUNTDOWN PANEL
+      ============================ */}
+      <section className="space-y-6">
+        <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-8 shadow-2xl shadow-emerald-500/5">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.4em] text-slate-400">
+                Countdown
+              </p>
+
+              <div className="mt-3 text-[3.1rem] font-semibold tracking-tight text-white md:text-[4rem]">
+                {formatTime(remainingSeconds)}
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-3 text-sm text-slate-400">
+            {isRunning
+              ? "Timer is actively controlling the burner window."
+              : "Adjust the preset with the push buttons, then arm the cycle."}
+          </p>
+
+          {/* Buttons */}
+          <div className="mt-8 flex flex-wrap gap-4">
+            {/* -1 min */}
+            <button
+              type="button"
+              onClick={() => handleAdjustDuration(-60)}
+              disabled={isAdjustDisabled || cycleDuration === MIN_DURATION}
+              className={`rounded-full px-6 py-3 text-sm font-semibold transition-all duration-200 
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500
+                disabled:cursor-not-allowed disabled:opacity-60 ${
+                  isAdjustDisabled || cycleDuration === MIN_DURATION
+                    ? "bg-white/10 text-slate-400"
+                    : "bg-white text-slate-900 hover:shadow-lg hover:shadow-emerald-500/30"
+                }`}
+            >
+              - 1 min
+            </button>
+
+            {/* +1 min */}
+            <button
+              type="button"
+              onClick={() => handleAdjustDuration(60)}
+              disabled={isAdjustDisabled || cycleDuration === MAX_DURATION}
+              className={`rounded-full px-6 py-3 text-sm font-semibold transition-all duration-200 
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500
+                disabled:cursor-not-allowed disabled:opacity-60 ${
+                  isAdjustDisabled || cycleDuration === MAX_DURATION
+                    ? "bg-white/10 text-slate-400"
+                    : "bg-white text-slate-900 hover:shadow-lg hover:shadow-emerald-500/30"
+                }`}
+            >
+              + 1 min
+            </button>
+
+            {/* Toggle cycle */}
+            <button
+              type="button"
+              onClick={handleToggleCycle}
+              disabled={leakDetected}
+              className="rounded-full px-7 py-3 text-sm font-semibold text-white transition-all duration-200 
+                bg-emerald-500 hover:bg-emerald-600 disabled:bg-orange-400 disabled:cursor-not-allowed"
+            >
+              {formatTime(remainingSeconds)}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ============================
+          CYCLE PANEL
+      ============================ */}
+      <div className="flex min-w-[200px] flex-col gap-3 rounded-2xl border border-white/10 bg-white/5 p-5">
+        <span className="text-xs uppercase tracking-[0.35em] text-slate-300">
+          Cycle
+        </span>
+
+        <span className="text-xl font-semibold text-white">
+          {formatMinutesLabel(cycleDuration)}
+        </span>
+
+        <div className="flex items-center justify-between text-xs text-slate-300">
+          <span>Progress</span>
+          <span>{progressPercent}%</span>
+        </div>
+
+        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+          <div
+            className={`h-full rounded-full ${
+              leakDetected ? "bg-orange-400" : "bg-emerald-400"
+            }`}
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <span
+            className={`h-2 w-2 rounded-full ${
+              leakDetected || remainingSeconds === 0
+                ? "bg-orange-400"
+                : isRunning
+                ? "bg-emerald-400"
+                : "bg-slate-500"
+            }`}
+          />
+          <span>
+            {leakDetected
+              ? "Solenoid locked"
+              : remainingSeconds === 0
+              ? "Cycle finished"
+              : isRunning
+              ? "Gas flow enabled"
+              : "Standing by"}
+          </span>
+        </div>
+      </div>
+
+      {/* ============================
+          VALVE + SENSOR PANEL
+      ============================ */}
+      <div className="grid gap-10 md:grid-cols-2">
+
+        {/* Valve */}
+        <div>
+          <p className="text-xs uppercase tracking-[0.35em] text-slate-400">
+            Valve
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-white">{valveState}</p>
+          <p className="mt-1 text-xs text-slate-400">Solenoid status</p>
+        </div>
+
+        {/* Sensor */}
+        <div>
+          <p className="text-xs uppercase tracking-[0.35em] text-slate-400">
+            Sensor
+          </p>
+          <p className="mt-1 text-2xl font-semibold text-white">{gasLevel} ppm</p>
+          <p className="mt-1 text-xs text-slate-400">MQ-2 live reading</p>
+        </div>
+      </div>
+
+      {/* ============================
+          CENTER VALVE HUD
+      ============================ */}
+      <div className="relative mx-auto aspect-square w-full max-w-xs">
+        <div className="absolute inset-0 rounded-full border border-white/20 bg-gradient-to-br from-emerald-400/20 to-cyan-400/10" />
+
+        <div className="absolute inset-4 rounded-full border border-white/10 bg-slate-950/80 backdrop-blur" />
+
+        <div className="absolute inset-10 flex flex-col items-center justify-center rounded-full bg-slate-950/80">
+          <span className="text-xs uppercase tracking-[0.45em] text-emerald-300/80">
+            Valve
+          </span>
+          <span className="mt-3 text-4xl font-semibold text-white">
+            {valveState}
+          </span>
+          <span className="mt-1 text-xs text-slate-400">Fail-safe actuator</span>
+        </div>
+
+        <div className="absolute inset-0 animate-[spin_18s_linear_infinite] rounded-full border-t border-white/30 opacity-80" />
+      </div>
+    </div>
+  );
+}
+import { useState, useEffect } from "react";
+
+export default function Dashboard() {
+  const MIN_DURATION = 60;
+  const MAX_DURATION = 3600;
+
+  const [cycleDuration, setCycleDuration] = useState(300);
+  const [remaining, setRemaining] = useState(300);
+  const [isRunning, setIsRunning] = useState(false);
+  const [leakDetected, setLeakDetected] = useState(false);
+  const [isAdjustDisabled, setIsAdjustDisabled] = useState(false);
+
+  const [isAddingPreset, setIsAddingPreset] = useState(false);
+  const [formError, setFormError] = useState(null);
+
+  const [customName, setCustomName] = useState("");
+  const [customTime, setCustomTime] = useState("");
+
+  const handleAdjustDuration = (amount) => {
+    if (isAdjustDisabled) return;
+    setCycleDuration((prev) => {
+      let next = prev + amount;
+      if (next < MIN_DURATION) next = MIN_DURATION;
+      if (next > MAX_DURATION) next = MAX_DURATION;
+      return next;
+    });
+  };
+
+  const startLabel = leakDetected
+    ? "Resolve leak before loading presets"
+    : isRunning
+    ? "Pause the cycle to load a preset"
+    : "Tap a dish to apply its timing";
+
+  const handleToggleCycle = () => {
+    if (leakDetected) return;
+
+    if (isRunning) {
+      setIsRunning(false);
+    } else {
+      setRemaining(cycleDuration);
+      setIsRunning(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!isRunning) return;
+
+    if (remaining <= 0) {
+      setIsRunning(false);
+      return;
+    }
+
+    const t = setTimeout(() => {
+      setRemaining((r) => r - 1);
+    }, 1000);
+
+    return () => clearTimeout(t);
+  }, [isRunning, remaining]);
+
+  const handleCreatePreset = (e) => {
+    e.preventDefault();
+    if (!customName.trim() || !customTime.trim()) {
+      setFormError("Fill all fields.");
+      return;
+    }
+    setFormError(null);
+    setIsAddingPreset(false);
+  };
+
+  return (
+    <div className="p-6 text-white">
+      {/* SECTION: Presets */}
+      <div>
+        <p className="text-xs uppercase tracking-[0.35em] text-slate-400">
+          Presets
+        </p>
+
+        <h3 className="mt-1 text-xl font-semibold text-white">
+          Preset cooking dishes
+        </h3>
+      </div>
+
+      <div className="flex flex-col items-start gap-2 text-xs text-slate-400 sm:items-end">
+        <span>
+          {isRunning
+            ? "Pause the cycle to load a preset"
+            : leakDetected
+            ? "Resolve leak before loading presets"
+            : "Tap a dish to apply its timing"}
+        </span>
+
+        <button
+          type="button"
+          onClick={() => {
+            setIsAddingPreset((prev) => !prev);
+            setFormError(null);
+          }}
+          className="inline-flex items-center gap-2 self-end rounded-full bg-white/10 px-3 py-1.5 font-semibold text-white transition-colors duration-150 hover:bg-white/15"
+        >
+          {isAddingPreset ? "Close preset form" : "Add custom preset"}
+
+          <svg
+            aria-hidden
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            className={`h-3.5 w-3.5 transition-transform ${
+              isAddingPreset ? "rotate-45" : ""
+            }`}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 4.5v15m7.5-7.5h-15"
+            />
+          </svg>
+        </button>
+      </div>
+
+      {isAddingPreset && (
+        <form
+          onSubmit={handleCreatePreset}
+          className="mt-6 grid gap-4 rounded-2xl border border-white/10 p-4"
+        >
+          <div>
+            <label className="text-sm">Dish name</label>
+            <input
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              className="mt-1 w-full rounded-lg bg-slate-800/40 p-2 text-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm">Time (seconds)</label>
+            <input
+              value={customTime}
+              onChange={(e) => setCustomTime(e.target.value)}
+              className="mt-1 w-full rounded-lg bg-slate-800/40 p-2 text-white"
+            />
+          </div>
+
+          {formError && (
+            <p className="text-red-400 text-sm">{formError}</p>
+          )}
+
+          <button
+            type="submit"
+            className="rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Save preset
+          </button>
+        </form>
+      )}
+
+      {/* SECTION: Main Display */}
+      <div className="rounded-3xl border border-white/10 bg-slate-900/70 p-7 mt-8">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.35em] text-slate-400">
+              Presets
+            </p>
+
+            <span className="mt-1 flex items-center gap-2 text-sm text-slate-400">
+              {isRunning ? "Gas flow enabled" : "Standing by"}
+            </span>
+          </div>
+        </div>
+
+        {/* ACTION BUTTONS */}
+        <div className="mt-8 flex flex-wrap gap-4">
+          <button
+            type="button"
+            onClick={() => handleAdjustDuration(-60)}
+            disabled={isAdjustDisabled || cycleDuration === MIN_DURATION}
+            className={`rounded-full px-6 py-3 text-sm font-semibold transition-all ${
+              cycleDuration === MIN_DURATION
+                ? "bg-white/10 text-slate-400 disabled:opacity-60"
+                : "bg-white text-slate-900 hover:shadow-lg hover:shadow-emerald-500/30"
+            }`}
+          >
+            − 1 min
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleAdjustDuration(60)}
+            disabled={isAdjustDisabled || cycleDuration === MAX_DURATION}
+            className={`rounded-full px-6 py-3 text-sm font-semibold transition-all ${
+              cycleDuration === MAX_DURATION
+                ? "bg-white/10 text-slate-400 disabled:opacity-60"
+                : "bg-white text-slate-900 hover:shadow-lg hover:shadow-emerald-500/30"
+            }`}
+          >
+            + 1 min
+          </button>
+
+          <button
+            type="button"
+            onClick={handleToggleCycle}
+            disabled={leakDetected}
+            className={`rounded-full px-7 py-3 text-sm font-semibold text-white transition-all ${
+              isRunning
+                ? "bg-emerald-500/20 hover:bg-emerald-500/30"
+                : leakDetected
+                ? "bg-orange-500/20"
+                : "bg-emerald-500 hover:bg-emerald-400"
+            }`}
+          >
+            {startLabel}
+          </button>
+        </div>
+
+        <p className="mt-6 flex items-center gap-2 text-xs text-slate-400">
+          <svg
+            aria-hidden
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            className="h-4 w-4 text-emerald-300"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v3.75m-9.303 3.376c-.866 1.5 1.217 3.374 1.948 3.374h14.71c.73 0 2.813-1.874 1.948-3.374L13.949 4.125c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126Z     />
+          </svg>
+          Gas supply is locked automatically when the countdown finishes or if
+          the sensor detects a leak.
+        </p>
+      </div>
+    </div>
+  
