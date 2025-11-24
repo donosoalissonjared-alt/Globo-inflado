@@ -1,0 +1,362 @@
+{
+  "name": "client-portal",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "better-sqlite3": "^8.2.0",
+    "bcrypt": "^5.1.0",
+    "body-parser": "^1.20.2",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "helmet": "^6.0.1",
+    "nanoid": "^4.0.0"
+  }
+}
+
+const fs = require("fs");
+const path = require("path");
+const express = require("express");
+const session = require("express-session");
+const bcrypt = require("bcrypt");
+const bodyParser = require("body-parser");
+const cookieParser = require("cookie-parser");
+const helmet = require("helmet");
+const Database = require("better-sqlite3");
+const { nanoid } = require("nanoid");
+
+const ADMIN_PASS = "Niniblulux54";   // your admin password
+const SESSION_SECRET = "super_secret_key_952348952394"; 
+
+// ----------------------------------
+// Auto-create PUBLIC folder + files
+// ----------------------------------
+function write(file, content) {
+  const full = path.join(__dirname, "public", file);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, content);
+}
+
+write("main.css", `
+:root{--bg:#0f1724;--accent:#00d1ff;color:#e6eef8}
+body{background:#071123;margin:0;color:white;font-family:Arial;}
+.topbar{background:#0b1220;padding:15px;color:var(--accent);display:flex;justify-content:space-between}
+.container{padding:20px}
+.center{max-width:400px;margin:40px auto;background:#0b1220;padding:20px;border-radius:10px}
+input,button{width:100%;padding:12px;margin:8px 0;border-radius:8px;border:0}
+button{background:var(--accent);font-weight:bold}
+.card{background:#0b1220;padding:15px;border-radius:10px;margin:10px 0}
+`);
+
+write("index.html", `
+<!doctype html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/main.css"><title>Offers</title>
+</head><body>
+<div class="topbar"><h2>MyPortal</h2>
+<div>
+<button onclick="location.href='/login.html'">Login</button>
+<button onclick="location.href='/register.html'">Register</button>
+</div></div>
+<div class="container">
+<h2>Our Offers</h2><div id="list"></div></div>
+<script>
+async function load(){
+ let r=await fetch('/api/offers'); let o=await r.json();
+ let wrap=document.getElementById('list'); wrap.innerHTML='';
+ o.forEach(x=>{
+   wrap.innerHTML+=\`
+   <div class='card'>
+     <h3>\${x.name}</h3>
+     <p>\${x.size_gb} Go — \${x.price} Ar</p>
+     <button onclick="buy('\${x.id}')">Buy</button>
+   </div>\`;
+ });
+}
+async function buy(id){
+ let me=await fetch('/api/me').then(r=>r.json()).catch(e=>null);
+ if(!me||!me.user){ alert("Login first"); location.href='/login.html'; return; }
+ let c=confirm("Confirm payment?");
+ if(!c) return;
+ let r=await fetch('/api/buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offerId:id})});
+ let d=await r.json(); if(d.ok){ alert("Payment confirmed"); location.href='/dashboard.html'; }
+}
+load();
+</script></body></html>
+`);
+
+write("login.html", `
+<!doctype html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/main.css"><title>Login</title>
+</head><body>
+<div class="center">
+<h2>Login</h2>
+<form id="f">
+<input name="emailOrPhone" placeholder="Email or Phone" required>
+<input type="password" name="password" placeholder="Password" required>
+<button>Login</button></form>
+<p><a href="/register.html">Create account</a></p></div>
+<script>
+document.getElementById('f').onsubmit=async(e)=>{
+ e.preventDefault();
+ let f=Object.fromEntries(new FormData(e.target));
+ let r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});
+ let d=await r.json();
+ if(d.ok){ location.href=d.isAdmin?'/admin.html':'/dashboard.html'; }
+ else alert(d.error);
+}
+</script></body></html>
+`);
+
+write("register.html", `
+<!doctype html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/main.css"><title>Register</title>
+</head><body>
+<div class="center"><h2>Create Account</h2>
+<form id="f">
+<input name="phone" placeholder="Phone (Madagascar)" required>
+<input name="email" type="email" placeholder="Email" required>
+<input name="password" type="password" placeholder="Password" required>
+<button>Create</button></form></div>
+<script>
+document.getElementById('f').onsubmit=async(e)=>{
+ e.preventDefault();
+ let f=Object.fromEntries(new FormData(e.target));
+ let r=await fetch('/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});
+ let d=await r.json();
+ if(d.ok) location.href='/dashboard.html'; else alert(d.error);
+}
+</script></body></html>
+`);
+
+write("dashboard.html", `
+<!doctype html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/main.css"><title>Dashboard</title>
+</head><body>
+<div class="topbar"><h2>Dashboard</h2>
+<button onclick="logout()">Logout</button></div>
+<div class="container">
+<h3>Your Info</h3>
+<div id="info"></div>
+<h3>Offers</h3><div id="list"></div>
+</div>
+<script>
+async function load(){
+ let me=await fetch('/api/me').then(r=>r.json()).catch(e=>null);
+ if(!me||!me.user) return location.href='/login.html';
+ let u=me.user, o=me.offer;
+ document.getElementById('info').innerHTML=\`
+  Phone: \${u.phone}<br>
+  Email: \${u.email}<br>
+  Plan: \${o?o.name:"None"}<br>
+  Bytes In: \${u.bytes_in}<br>
+  Bytes Out: \${u.bytes_out}<br>
+ \`;
+ let r=await fetch('/api/offers'); let offers=await r.json();
+ let wrap=document.getElementById('list'); wrap.innerHTML='';
+ offers.forEach(x=>{
+  wrap.innerHTML+=\`
+   <div class='card'><h4>\${x.name}</h4>
+   <p>\${x.size_gb} Go — \${x.price} Ar</p>
+   <button onclick="buy('\${x.id}')">Buy</button></div>\`;
+ });
+}
+async function buy(id){
+ let c=confirm("Confirm?");
+ if(!c) return;
+ let r=await fetch('/api/buy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({offerId:id})});
+ let d=await r.json();
+ if(d.ok) load(); else alert(d.error);
+}
+async function logout(){ await fetch('/api/logout',{method:'POST'}); location.href='/'; }
+load();
+</script></body></html>
+`);
+
+write("admin.html", `
+<!doctype html><html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="/main.css"><title>Admin</title>
+</head><body>
+<div class="topbar"><h2>Admin Panel</h2><button onclick="logout()">Logout</button></div>
+<div class="container">
+<h3>Clients</h3><div id="clients"></div>
+<h3>Offers</h3><div id="offers"></div>
+
+<h3>Add Offer</h3>
+<form id="add">
+<input name="name" placeholder="Name (Ex: 10Go)">
+<input name="size_gb" placeholder="GB">
+<input name="price" placeholder="Price Ar">
+<button>Add</button></form>
+</div>
+<script>
+async function load(){
+ let u=await fetch('/api/admin/users').then(r=>r.json()).catch(e=>null);
+ if(!u){ alert("Not admin"); return location.href='/login.html'; }
+ let wrap=document.getElementById('clients'); wrap.innerHTML='';
+ u.forEach(x=>{
+   wrap.innerHTML+=\`
+   <div class='card'>
+     <b>\${x.phone}</b><br>\${x.email}<br>
+     Plan: \${x.currentOfferId||"None"}<br>
+     In: \${x.bytes_in} Out:\${x.bytes_out}<br>
+   </div>\`;
+ });
+
+ let o=await fetch('/api/offers').then(r=>r.json());
+ let ow=document.getElementById('offers'); ow.innerHTML='';
+ o.forEach(x=>{
+   ow.innerHTML+=\`<div class='card'>\${x.name} - \${x.size_gb}Go - \${x.price} Ar</div>\`;
+ });
+}
+document.getElementById('add').onsubmit=async e=>{
+ e.preventDefault();
+ let f=Object.fromEntries(new FormData(e.target));
+ await fetch('/api/admin/offers',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(f)});
+ load();
+};
+async function logout(){ await fetch('/api/logout',{method:'POST'}); location.href='/'; }
+load();
+</script></body></html>
+`);
+
+
+// ----------------------------
+// BACKEND
+// ----------------------------
+const app = express();
+app.use(helmet());
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cookieParser());
+app.use(express.static("public"));
+
+app.use(session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+}));
+
+// DB
+const db = new Database("data.db");
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS users (
+ id TEXT PRIMARY KEY,
+ phone TEXT UNIQUE,
+ email TEXT UNIQUE,
+ password TEXT,
+ isAdmin INTEGER DEFAULT 0,
+ currentOfferId TEXT,
+ bytes_in INTEGER DEFAULT 0,
+ bytes_out INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS offers (
+ id TEXT PRIMARY KEY,
+ name TEXT,
+ size_gb INTEGER,
+ price INTEGER,
+ data_limit_bytes INTEGER
+);
+CREATE TABLE IF NOT EXISTS payments (
+ id TEXT PRIMARY KEY,
+ userId TEXT,
+ offerId TEXT,
+ amount INTEGER,
+ status TEXT,
+ createdAt TEXT
+);
+`);
+
+if (!db.prepare("SELECT COUNT(*) AS c FROM offers").get().c) {
+  const ins = db.prepare("INSERT INTO offers VALUES (?,?,?,?,?)");
+  ins.run(nanoid(), "1Go", 1, 1000, 1*1024*1024*1024);
+  ins.run(nanoid(), "3Go", 3, 3000, 3*1024*1024*1024);
+  ins.run(nanoid(), "5Go", 5, 5000, 5*1024*1024*1024);
+}
+
+let admin = db.prepare("SELECT * FROM users WHERE isAdmin=1").get();
+if (!admin) {
+  db.prepare("INSERT INTO users VALUES (?,?,?,?,1,NULL,0,0)")
+    .run(nanoid(), "0000000000", "admin@portal.com", bcrypt.hashSync(ADMIN_PASS,10));
+}
+
+function auth(req,res,next){
+  if(req.session.userId) return next();
+  res.status(401).json({error:"Not logged in"});
+}
+function adminOnly(req,res,next){
+  const u=db.prepare("SELECT * FROM users WHERE id=?").get(req.session.userId);
+  if(u && u.isAdmin) return next();
+  res.status(403).json({error:"Admin only"});
+}
+
+// API
+app.get("/api/offers",(req,res)=>{
+  res.json(db.prepare("SELECT * FROM offers").all());
+});
+
+app.post("/api/register", async (req,res)=>{
+  let {phone,email,password}=req.body;
+  if(!phone||!email||!password) return res.json({error:"Missing"});
+  try{
+    db.prepare("INSERT INTO users VALUES (?,?,?,?,0,NULL,0,0)")
+      .run(nanoid(),phone,email,await bcrypt.hash(password,10));
+    let u=db.prepare("SELECT * FROM users WHERE email=?").get(email);
+    req.session.userId=u.id;
+    res.json({ok:true});
+  } catch(e){ res.json({error:"Phone or email already used"}); }
+});
+
+app.post("/api/login", (req,res)=>{
+  const {emailOrPhone,password}=req.body;
+  const u=db.prepare("SELECT * FROM users WHERE email=? OR phone=?")
+          .get(emailOrPhone,emailOrPhone);
+  if(!u) return res.json({error:"Invalid"});
+  if(!bcrypt.compareSync(password,u.password)) return res.json({error:"Invalid"});
+  req.session.userId=u.id;
+  res.json({ok:true,isAdmin:!!u.isAdmin});
+});
+
+app.post("/api/logout",(req,res)=>{
+  req.session.destroy(()=>res.json({ok:true}));
+});
+
+app.get("/api/me",auth,(req,res)=>{
+  const u=db.prepare("SELECT * FROM users WHERE id=?").get(req.session.userId);
+  let offer=null;
+  if(u.currentOfferId) offer=db.prepare("SELECT * FROM offers WHERE id=?").get(u.currentOfferId);
+  res.json({user:u,offer});
+});
+
+app.post("/api/buy",auth,(req,res)=>{
+  const {offerId}=req.body;
+  const offer=db.prepare("SELECT * FROM offers WHERE id=?").get(offerId);
+  if(!offer) return res.json({error:"Offer not found"});
+  let uid=req.session.userId;
+  db.prepare("INSERT INTO payments VALUES (?,?,?,?,?,?)")
+    .run(nanoid(),uid,offerId,offer.price,"CONFIRMED",new Date().toISOString());
+  db.prepare("UPDATE users SET currentOfferId=?,bytes_in=0,bytes_out=0 WHERE id=?")
+    .run(offerId,uid);
+  res.json({ok:true});
+});
+
+// ADMIN
+app.get("/api/admin/users",auth,adminOnly,(req,res)=>{
+  res.json(db.prepare("SELECT * FROM users").all());
+});
+
+app.post("/api/admin/offers",auth,adminOnly,(req,res)=>{
+  let {name,size_gb,price}=req.body;
+  db.prepare("INSERT INTO offers VALUES (?,?,?,?,?)")
+    .run(nanoid(),name,size_gb,price,size_gb*1024*1024*1024);
+  res.json({ok:true});
+});
+
+// START
+app.listen(3000,()=>console.log("Portal running"));
