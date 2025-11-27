@@ -1,14 +1,16 @@
 {
-  "dependencies": {
-    "@fastly/js-compute": "^3.30.1"
-  },
-  "devDependencies": {
-    "@fastly/cli": "^10.14.0"
-  },
+  "name": "quantum-proxy",
+  "version": "1.0.0",
+  "main": "server.js",
   "scripts": {
-    "build": "js-compute-runtime src/index.js bin/main.wasm",
-    "start": "fastly compute serve --watch",
-    "deploy": "fastly compute publish --accept-defaults --auto-yes",
-    "domain": "fastly domain list --version=latest"
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "http-proxy-middleware": "^2.0.6"
+  },
+  "engines": {
+    "node": "16.x"
   }
 }
