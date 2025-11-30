@@ -1,0 +1,575 @@
+>>> package.json
+{
+  "name": "aurix-os",
+  "version": "1.0.0",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "mongoose": "^8.7.0",
+    "dotenv": "^16.4.5",
+    "winston": "^3.14.2",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^7.4.0",
+    "crypto-js": "^4.2.0",
+    "stripe": "^17.2.0",
+    "razorpay": "^2.9.4",
+    "twilio": "^5.3.3",
+    "openai": "^4.63.0",
+    "appwrite": "^15.0.0",
+    "helmet": "^8.0.0"
+  }
+}
+
+>>> server.js
+import 'dotenv/config';
+import express from 'express';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import helmet from 'helmet';
+import winston from 'winston';
+import rateLimit from 'express-rate-limit';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+import routes from './src/routes/index.js';
+import Log from './src/models/log.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' })
+  ]
+});
+
+app.use(helmet());
+app.use(cors());
+app.use(express.json());
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
+
+app.use(async (req, res, next) => {
+  req.startTime = Date.now();
+  const oldEnd = res.end;
+  res.end = function(...args) {
+    const latency = Date.now() - req.startTime;
+    Log.create({ method: req.method, url: req.url, status: res.statusCode, latency, user: req.user ? req.user._id : 'anonymous' }).catch(() => {});
+    logger.info(`\( {req.method} \){req.url} - \( {res.statusCode} - \){latency}ms`);
+    oldEnd.apply(this, args);
+  };
+  next();
+});
+
+app.use('/api', routes);
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
+// Serve static frontend files from root
+app.use(express.static(__dirname));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.use(async (err, req, res, next) => {
+  const latency = Date.now() - (req.startTime || Date.now());
+  await Log.create({ method: req.method, url: req.url, error: err.message, latency, user: req.user ? req.user._id : 'anonymous' }).catch(() => {});
+  logger.error(err.stack);
+  res.status(500).json({
+    success: false,
+    error: 'Internal Server Error',
+    trivus: { stability_score: 0, risk_level: 'high', verification: 'failed', latency_ms: latency }
+  });
+});
+
+mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/aurix')
+  .then(() => logger.info('MongoDB connected'))
+  .catch(err => logger.error('MongoDB error:', err));
+
+app.listen(port, '0.0.0.0', () => {
+  logger.info(`AURIX OS live at http://0.0.0.0:${port}`);
+});
+
+>>> index.html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AURIX OS — Trivus Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="/app.js"></script>
+  </head>
+  <body class="bg-black text-white min-h-screen">
+    <div id="root"></div>
+  </body>
+</html>
+
+>>> app.js
+const API_BASE = "/api";
+
+let apiKey = localStorage.getItem("aurix-key") || "";
+
+document.getElementById("root").innerHTML = `
+<nav class="bg-gray-900 border-b border-gray-800 p-4">
+  <div class="max-w-6xl mx-auto flex justify-between items-center">
+    <h1 class="text-2xl font-bold">AURIX OS</h1>
+    <div class="flex gap-4">
+      <button onclick="showPage('home')" class="hover:text-blue-400">Home</button>
+      <button onclick="showPage('assistant')" class="hover:text-blue-400">Assistant</button>
+      <button onclick="showPage('tools')" class="hover:text-blue-400">Tools</button>
+      ${apiKey ? `<button onclick="logout()" class="text-red-400">Logout</button>` : `<button onclick="showPage('login')" class="bg-blue-600 px-4 py-2 rounded">Login</button>`}
+    </div>
+  </div>
+</nav>
+<div id="page"></div>
+`;
+
+function showPage(page) {
+  const el = document.getElementById("page");
+  if (page === "home") {
+    el.innerHTML = `<div class="text-center py-32"><h1 class="text-7xl font-black mb-8">AURIX OS</h1><p class="text-2xl text-gray-400">Truth. Stability. Security.</p><button onclick="generateKey()" class="mt-8 bg-blue-600 hover:bg-blue-700 px-8 py-4 text-xl rounded">Get Started Free</button></div>`;
+  }
+  if (page === "login") {
+    el.innerHTML = `<div class="max-w-md mx-auto mt-20 bg-gray-900 p-8 rounded"><h2 class="text-3xl mb-6">Enter API Key</h2><input id="keyInput" class="w-full p-3 bg-gray-800 rounded mb-4" placeholder="aurix_..."><button onclick="login()" class="w-full bg-blue-600 hover:bg-blue-700 p-3 rounded">Enter</button><p class="mt-4 text-center">Don't have a key? <a href="#" onclick="generateKey()">Generate one</a></p></div>`;
+  }
+  if (page === "assistant") {
+    if (!apiKey) return showPage("login");
+    el.innerHTML = `<div class="max-w-4xl mx-auto p-8"><h2 class="text-4xl mb-8">Trivus Assistant</h2><div id="chat" class="bg-gray-900 rounded p-6 h-96 overflow-y-auto mb-4"></div><div class="flex"><input id="msg" class="flex-1 p-3 bg-gray-800 rounded-l" placeholder="Ask anything..."><button onclick="send()" class="bg-blue-600 px-6 rounded-r">Send</button></div></div>`;
+  }
+  if (page === "tools") {
+    el.innerHTML = `<div class="max-w-6xl mx-auto p-8"><h2 class="text-4xl mb-8">Tools</h2><div class="grid grid-cols-3 gap-6 text-center">Coming soon...</div></div>`;
+  }
+}
+
+function generateKey() {
+  fetch(API_BASE + "/auth/generate-key", { method: "POST", headers: { "Content-Type": "application/json" } })
+    .then(r => r.json())
+    .then(d => {
+      apiKey = d.apiKey;
+      localStorage.setItem("aurix-key", apiKey);
+      alert("Key generated & saved!");
+      showPage("assistant");
+    });
+}
+
+function login() {
+  apiKey = document.getElementById("keyInput").value.trim();
+  if (apiKey) {
+    localStorage.setItem("aurix-key", apiKey);
+    showPage("assistant");
+  }
+}
+
+function logout() {
+  apiKey = "";
+  localStorage.removeItem("aurix-key");
+  showPage("home");
+}
+
+function send() {
+  const input = document.getElementById("msg");
+  const msg = input.value.trim();
+  if (!msg) return;
+  const chat = document.getElementById("chat");
+  chat.innerHTML += `<div class="text-right mb-4"><div class="inline-block bg-blue-600 p-4 rounded-lg max-w-md">${msg}</div></div>`;
+  input.value = "";
+  fetch(API_BASE + "/assistant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+    body: JSON.stringify({ query: msg })
+  })
+    .then(r => r.json())
+    .then(d => {
+      chat.innerHTML += `<div class="mb-4"><div class="inline-block bg-gray-800 p-4 rounded-lg max-w-md">\( {JSON.stringify(d.output || d)}</div><div class="text-xs text-green-400 mt-1">Trivus Score: \){d.trivus?.stability_score || '—'} | Risk: ${d.trivus?.risk_level || '—'}</div></div>`;
+      chat.scrollTop = chat.scrollHeight;
+    })
+    .catch(() => chat.innerHTML += `<div class="text-red-400">Error</div>`);
+}
+
+showPage("home");
+
+>>> src/routes/index.js
+import express from 'express';
+const router = express.Router();
+
+router.use('/core', (await import('./core.js')).default);
+router.use('/tool', (await import('./tools.js')).default);
+router.use('/auth', (await import('./auth.js')).default);
+router.use('/plan', (await import('./plan.js')).default);
+router.use('/assistant', (await import('./assistant.js')).default);
+
+export default router;
+
+>>> src/controllers/coreController.js
+import trivusService from '../services/trivusService.js';
+
+const coreController = {
+  route: async (req, res, next) => {
+    try {
+      const result = await trivusService.trafficPolice(req.body);
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+  judge: async (req, res, next) => {
+    try {
+      const result = await trivusService.judge(req.body);
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+  stability: async (req, res, next) => {
+    try {
+      const result = await trivusService.stability(req.body);
+      res.json(result);
+    } catch (err) { next(err); }
+  },
+  optimize: async (req, res, next) => {
+    try {
+      const result = await trivusService.optimizer(req.body);
+      res.json(result);
+    } catch (err) { next(err); }
+  }
+};
+
+export default coreController;
+
+>>> src/controllers/toolController.js
+const toolController = {
+  promptXray: (req, res) => res.json(req.trivusResponse),
+  morphoscript: (req, res) => res.json(req.trivusResponse),
+  truthpulse: (req, res) => res.json(req.trivusResponse),
+  ciphervault: (req, res) => res.json(req.trivusResponse),
+  polyforge: (req, res) => res.json(req.trivusResponse),
+  memoraflux: (req, res) => res.json(req.trivusResponse),
+  behaviumatrix: (req, res) => res.json(req.trivusResponse),
+  neuroblade: (req, res) => res.json(req.trivusResponse),
+  dataaegis: (req, res) => res.json(req.trivusResponse),
+  echochain: (req, res) => res.json(req.trivusResponse)
+};
+
+export default toolController;
+
+>>> src/controllers/authController.js
+import User from '../models/user.js';
+import Plan from '../models/plan.js';
+
+const authController = {
+  generateKey: async (req, res, next) => {
+    try {
+      const { username } = req.body;
+      const user = new User({
+        username: username || `user-${Date.now()}`,
+        apiKey: `aurix_\( {Date.now()}_ \){Math.random().toString(36).substr(2,9)}`
+      });
+      await user.save();
+      const plan = new Plan({ user: user._id, plan: 'free' });
+      await plan.save();
+      res.json({ success: true, apiKey: user.apiKey, plan: 'free' });
+    } catch (err) { next(err); }
+  }
+};
+
+export default authController;
+
+>>> src/controllers/planController.js
+import Plan from '../models/plan.js';
+import OpsUsage from '../models/opsUsage.js';
+import configPlans from '../config/plans.js';
+import paymentService from '../services/paymentService.js';
+import twilioService from '../services/twilioService.js';
+
+const planController = {
+  getPlan: async (req, res, next) => {
+    try {
+      const plan = await Plan.findOne({ user: req.user._id }) || { plan: 'free' };
+      res.json({ success: true, plan: plan.plan, limits: configPlans.plans[plan.plan] });
+    } catch (err) { next(err); }
+  },
+  upgrade: async (req, res, next) => {
+    try {
+      const { plan } = req.body;
+      if (!configPlans.plans[plan]) throw new Error('Invalid plan');
+      await Plan.updateOne({ user: req.user._id }, { plan }, { upsert: true });
+      res.json({ success: true, message: 'Plan upgraded' });
+    } catch (err) { next(err); }
+  },
+  topUp: async (req, res, next) => {
+    try {
+      const { amount } = req.body;
+      if (!amount || amount <= 0) throw new Error('Invalid amount');
+      const today = new Date().toDateString();
+      await OpsUsage.updateOne({ user: req.user._id, date: today }, { $inc: { ops: -amount } }, { upsert: true });
+      res.json({ success: true, message: `Added ${amount} ops` });
+    } catch (err) { next(err); }
+  },
+  checkout: async (req, res, next) => {
+    try {
+      const { planName, paymentMethod, amount } = req.body;
+      if (!configPlans.plans[planName]) throw new Error('Invalid plan');
+      let paymentResult = 'dummy-payment-id';
+      if (paymentMethod === 'stripe' && process.env.STRIPE_SECRET_KEY) {
+        paymentResult = await paymentService.createStripeSession(req.user._id, planName, amount);
+      } else if (paymentMethod === 'razorpay' && process.env.RAZORPAY_KEY_SECRET) {
+        paymentResult = await paymentService.createRazorpayOrder(req.user._id, planName, amount);
+      }
+      await Plan.updateOne({ user: req.user._id }, { plan: planName }, { upsert: true });
+      res.json({ success: true, paymentResult, message: 'Checkout complete (sandbox)' });
+    } catch (err) { next(err); }
+  }
+};
+
+export default planController;
+
+>>> src/controllers/assistantController.js
+import assistantService from '../services/assistantService.js';
+
+const assistantController = {
+  processQuery: async (req, res, next) => {
+    try {
+      const { query } = req.body;
+      const result = await assistantService.orchestrate(query, req.user);
+      res.json(result);
+    } catch (err) { next(err); }
+  }
+};
+
+export default assistantController;
+
+>>> src/routes/core.js
+import express from 'express';
+const router = express.Router();
+import coreController from '../controllers/coreController.js';
+
+router.post('/route', coreController.route);
+router.post('/judge', coreController.judge);
+router.post('/stability', coreController.stability);
+router.post('/optimize', coreController.optimize);
+
+export default router;
+
+>>> src/routes/tools.js
+import express from 'express';
+const router = express.Router();
+import toolController from '../controllers/toolController.js';
+import apiKeyAuth from '../middleware/apiKeyAuth.js';
+import toolAccess from '../middleware/toolAccess.js';
+import minuteRateLimiter from '../middleware/minuteRateLimiter.js';
+import dailyRateLimiter from '../middleware/dailyRateLimiter.js';
+import trivusOrchestration from '../middleware/trivusOrchestration.js';
+
+router.use(apiKeyAuth, toolAccess, minuteRateLimiter, dailyRateLimiter);
+
+router.post('/prompt-xray', trivusOrchestration, toolController.promptXray);
+router.post('/morphoscript', trivusOrchestration, toolController.morphoscript);
+router.post('/truthpulse', trivusOrchestration, toolController.truthpulse);
+router.post('/ciphervault', trivusOrchestration, toolController.ciphervault);
+router.post('/polyforge', trivusOrchestration, toolController.polyforge);
+router.post('/memoraflux', trivusOrchestration, toolController.memoraflux);
+router.post('/behaviumatrix', trivusOrchestration, toolController.behaviumatrix);
+router.post('/neuroblade', trivusOrchestration, toolController.neuroblade);
+router.post('/dataaegis', trivusOrchestration, toolController.dataaegis);
+router.post('/echochain', trivusOrchestration, toolController.echochain);
+
+export default router;
+
+>>> src/routes/auth.js
+import express from 'express';
+const router = express.Router();
+import authController from '../controllers/authController.js';
+
+router.post('/generate-key', authController.generateKey);
+
+export default router;
+
+>>> src/routes/plan.js
+import express from 'express';
+const router = express.Router();
+import planController from '../controllers/planController.js';
+import apiKeyAuth from '../middleware/apiKeyAuth.js';
+
+router.use(apiKeyAuth);
+
+router.get('/my-plan', planController.getPlan);
+router.post('/upgrade', planController.upgrade);
+router.post('/top-up', planController.topUp);
+router.post('/checkout', planController.checkout);
+
+export default router;
+
+>>> src/routes/assistant.js
+import express from 'express';
+const router = express.Router();
+import assistantController from '../controllers/assistantController.js';
+import apiKeyAuth from '../middleware/apiKeyAuth.js';
+import minuteRateLimiter from '../middleware/minuteRateLimiter.js';
+import dailyRateLimiter from '../middleware/dailyRateLimiter.js';
+
+router.post('/', apiKeyAuth, minuteRateLimiter, dailyRateLimiter, assistantController.processQuery);
+
+export default router;
+
+>>> src/models/user.js
+import mongoose from 'mongoose';
+
+const userSchema = new mongoose.Schema({
+  username: String,
+  apiKey: { type: String, unique: true },
+  createdAt: { type: Date, default: Date.now }
+});
+
+export default mongoose.model('User', userSchema);
+
+>>> src/models/plan.js
+import mongoose from 'mongoose';
+
+const planSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  plan: { type: String, default: 'free' },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+export default mongoose.model('Plan', planSchema);
+
+>>> src/models/opsUsage.js
+import mongoose from 'mongoose';
+
+const opsUsageSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  date: String,
+  ops: { type: Number, default: 0 }
+});
+
+export default mongoose.model('OpsUsage', opsUsageSchema);
+
+>>> src/models/toolLog.js
+import mongoose from 'mongoose';
+
+const toolLogSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  tool: String,
+  input: Object,
+  timestamp: { type: Date, default: Date.now }
+});
+
+export default mongoose.model('ToolLog', toolLogSchema);
+
+>>> src/models/assistantLog.js
+import mongoose from 'mongoose';
+
+const assistantLogSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  query: String,
+  response: Object,
+  timestamp: { type: Date, default: Date.now }
+});
+
+export default mongoose.model('AssistantLog', assistantLogSchema);
+
+>>> src/models/log.js
+import mongoose from 'mongoose';
+
+const logSchema = new mongoose.Schema({
+  method: String,
+  url: String,
+  status: Number,
+  latency: Number,
+  user: String,
+  error: String,
+  timestamp: { type: Date, default: Date.now }
+});
+
+export default mongoose.model('Log', logSchema);
+
+>>> src/middleware/apiKeyAuth.js
+import User from '../models/user.js';
+
+export default async (req, res, next) => {
+  const key = req.headers['x-api-key'];
+  if (!key) return res.status(401).json({ success: false, error: 'API key required' });
+  const user = await User.findOne({ apiKey: key });
+  if (!user) return res.status(401).json({ success: false, error: 'Invalid API key' });
+  req.user = user;
+  next();
+};
+
+>>> src/middleware/toolAccess.js
+import Plan from '../models/plan.js';
+import configPlans from '../config/plans.js';
+
+export default async (req, res, next) => {
+  const tool = req.path.split('/').pop().replace(/-/g, '');
+  const planDoc = await Plan.findOne({ user: req.user._id });
+  const plan = planDoc?.plan || 'free';
+  const allowed = configPlans.plans[plan].tools === 'all' || configPlans.plans[plan].tools.includes(tool);
+  if (!allowed) return res.status(403).json({ success: false, error: 'Tool not available on your plan' });
+  next();
+};
+
+>>> src/middleware/minuteRateLimiter.js
+import OpsUsage from '../models/opsUsage.js';
+
+export default async (req, res, next) => {
+  const today = new Date().toDateString();
+  const usage = await OpsUsage.findOneAndUpdate(
+    { user: req.user._id, date: today },
+    { $inc: { ops: 1 } },
+    { upsert: true, new: true }
+  );
+  if (usage.ops > 10000) return res.status(429).json({ success: false, error: 'Minute rate limit exceeded' });
+  next();
+};
+
+>>> src/middleware/dailyRateLimiter.js
+import Plan from '../models/plan.js';
+import OpsUsage from '../models/opsUsage.js';
+import configPlans from '../config/plans.js';
+
+export default async (req, res, next) => {
+  const planDoc = await Plan.findOne({ user: req.user._id });
+  const plan = planDoc?.plan || 'free';
+  const limit = configPlans.plans[plan].ops;
+  const today = new Date().toDateString();
+  const usage = await OpsUsage.findOne({ user: req.user._id, date: today });
+  if (usage && usage.ops > limit) return res.status(429).json({ success: false, error: 'Daily limit exceeded' });
+  next();
+};
+
+>>> src/middleware/trivusOrchestration.js
+import toolService from '../services/toolService.js';
+import trivusService from '../services/trivusService.js';
+
+export default async (req, res, next) => {
+  try {
+    const tool = req.path.split('/').pop().replace(/-/g, '');
+    const toolResult = await toolService[tool](req.body);
+    const judged = await trivusService.judge(toolResult);
+    const stable = await trivusService.stability(judged);
+    const optimized = await trivusService.optimizer(stable);
+    req.trivusResponse = {
+      success: true,
+      output: optimized.optimized,
+      trivus: {
+        stability_score: stable.stabilityScore,
+        risk_level: stable.riskLevel,
+        verification: judged.verification
+      }
+    };
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+>>> src/services/trivusService.js
+import toolService from './toolService.js';
+
+c
