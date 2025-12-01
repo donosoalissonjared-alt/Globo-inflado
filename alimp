@@ -1,0 +1,15 @@
+// server.js  – Glitch entry file
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
+const client = new Client({ authStrategy: new LocalAuth() });
+
+client.on('qr', qr => qrcode.generate(qr, {small: true}));
+client.on('ready', () => console.log('READY'));
+
+client.on('message', async msg => {
+  if(msg.body === '!start') {
+    await msg.reply('سلام! برای سفارش کلیک کنید: https://example.com');
+  } 
+});
+client.initialize();
+⁰ 
