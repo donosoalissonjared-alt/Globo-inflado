@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+<meta charset="UTF-8">
+<title>آزمون تعاملی آرش کمان‌گیر</title>
+<style>
+  body { font-family: Tahoma, sans-serif; background: linear-gradient(to bottom, #ffecd2, #fcb69f); color: #333; text-align: center; padding: 30px; }
+  .page { display: none; padding: 20px; border-radius: 15px; background: rgba(255,255,255,0.8); margin: 20px auto; max-width: 600px; }
+  .active { display: block; }
+  button { padding: 10px 20px; margin: 10px; font-size: 16px; cursor: pointer; border-radius: 8px; border: none; background-color: #ff7f50; color: white; transition: 0.3s; }
+  button:hover { background-color: #ff4500; }
+  input[type=text] { padding: 5px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; width: 80%; }
+  .correct { color: green; font-weight: bold; }
+  .wrong { color: red; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>آزمون درس ۶ فارسی – آرش کمان‌گیر</h1>
+
+<!-- صفحه ۱: درک مطلب -->
+<div class="page active" id="page1">
+  <h2>درک مطلب</h2>
+  <p>آرش چگونه ایران را نجات داد؟</p>
+  <input type="text" id="answer1" placeholder="جواب خود را بنویسید">
+  <br>
+  <button onclick="checkPage1()">ثبت جواب</button>
+  <p id="feedback1"></p>
+</div>
+
+<!-- صفحه ۲: درست/نادرست -->
+<div class="page" id="page2">
+  <h2>درست یا نادرست</h2>
+  <p>آرش تنها یک تیر شلیک کرد؟</p>
+  <button onclick="checkPage2(true)">👍 درست</button>
+  <button onclick="checkPage2(false)">👎 نادرست</button>
+  <p id="feedback2"></p>
+</div>
+
+<!-- صفحه ۳: معنی کلمات -->
+<div class="page" id="page3">
+  <h2>معنی کلمات</h2>
+  <p>خاورو:</p>
+  <input type="text" id="word1" placeholder="معنی را بنویسید">
+  <p>جاودانی:</p>
+  <input type="text" id="word2" placeholder="معنی را بنویسید">
+  <p>افراسیاب:</p>
+  <input type="text" id="word3" placeholder="معنی را بنویسید">
+  <br>
+  <button onclick="checkPage3()">ثبت جواب‌ها</button>
+  <p id="feedback3"></p>
+</div>
+
+<!-- صفحه ۴: امتیاز نهایی -->
+<div class="page" id="page4">
+  <h2>امتیاز نهایی شما</h2>
+  <p id="finalScore"></p>
+</div>
+
+<script>
+let score = 0;
+
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// صفحه ۱
+function checkPage1() {
+  const ans = document.getElementById('answer1').value.trim();
+  const feedback = document.getElementById('feedback1');
+  if(ans !== '') {
+    if(ans.includes("تیر") || ans.includes("نجات")) {
+      feedback.textContent = "✅ درست! آفرین!";
+      feedback.className = "correct";
+      score += 5;
+      setTimeout(()=>showPage('page2'), 1000);
+    } else {
+      feedback.textContent = "❌ غلط! دوباره فکر کنید.";
+      feedback.className = "wrong";
+      score -= 2;
+    }
+  }
+}
+
+// صفحه ۲
+function checkPage2(answer) {
+  const feedback = document.getElementById('feedback2');
+  if(answer === true) {
+    feedback.textContent = "✅ آفرین!";
+    feedback.className = "correct";
+    score += 5;
+  } else {
+    feedback.textContent = "❌ غلط!";
+    feedback.className = "wrong";
+    score -= 2;
+  }
+  setTimeout(()=>showPage('page3'), 1000);
+}
+
+// صفحه ۳
+function checkPage3() {
+  const w1 = document.getElementById('word1').value.trim();
+  const w2 = document.getElementById('word2').value.trim();
+  const w3 = document.getElementById('word3').value.trim();
+  let feedback = "";
+  if(w1.includes("شرق")) { score +=5; feedback+="خاورو ✅ "; } else { score -=2; feedback+="خاورو ❌ "; }
+  if(w2.includes("جاودانه") || w2.includes("همیشگی")) { score +=5; feedback+="جاودانی ✅ "; } else { score -=2; feedback+="جاودانی ❌ "; }
+  if(w3.includes("پادشاه") || w3.includes("تورانی")) { score +=5; feedback+="افراسیاب ✅ "; } else { score -=2; feedback+="افراسیاب ❌ "; }
+  document.getElementById('feedback3').textContent = feedback + " آفرین!";
+  setTimeout(()=>showPage('page4'), 1500);
+}
+
+// صفحه ۴
+document.getElementById('page4').addEventListener('DOMNodeInserted', ()=>{
+  document.getElementById('finalScore').textContent = "امتیاز کل: " + score;
+});
+</script>
+
+</body>
+</html>
