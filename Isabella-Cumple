@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cumpleaños Isabella 🎉</title>
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: radial-gradient(circle at top, #12002b, #000);
+      font-family: 'Arial', sans-serif;
+      overflow: hidden;
+      color: #fff;
+    }
+
+    .card {
+      text-align: center;
+      padding: 40px;
+      border-radius: 20px;
+      background: rgba(0,0,0,0.6);
+      box-shadow: 0 0 30px #ff00ff;
+      animation: glow 3s infinite alternate;
+    }
+
+    h1 {
+      font-size: 3rem;
+      color: #ff00ff;
+      text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff66ff;
+    }
+
+    h2 {
+      color: #00ffff;
+      text-shadow: 0 0 10px #00ffff;
+    }
+
+    p {
+      font-size: 1.2rem;
+      margin-top: 15px;
+    }
+
+    .btn {
+      margin-top: 25px;
+      padding: 12px 25px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 30px;
+      background: linear-gradient(45deg, #ff00ff, #00ffff);
+      color: #000;
+      cursor: pointer;
+      box-shadow: 0 0 15px #ff00ff;
+    }
+
+    @keyframes glow {
+      from { box-shadow: 0 0 20px #ff00ff; }
+      to { box-shadow: 0 0 40px #00ffff; }
+    }
+
+    canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: -1;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="particles"></canvas>
+
+<div class="card">
+  <h1>🎉 ¡Feliz Cumpleaños! 🎉</h1>
+  <h2>Isabella 💖</h2>
+  <p>Te esperamos para celebrar tus 7 años ✨</p>
+  <p>📅 21 de diciembre – ⏰ 6:00 pm</p>
+  <p>📍 Antiguo Club de Tiro, Caza y Pesca<br/>Entrada vía Nariño</p>
+
+  <button class="btn" onclick="playMusic()">▶ Música de Cumpleaños</button>
+</div>
+
+<audio id="music" loop>
+  <!-- Puedes reemplazar este archivo por cualquier MP3 de cumpleaños -->
+  <source src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_5c2c7a9b7f.mp3" type="audio/mpeg">
+</audio>
+
+<script>
+  function playMusic() {
+    document.getElementById('music').play();
+  }
+
+  // Partículas animadas
+  const canvas = document.getElementById('particles');
+  const ctx = canvas.getContext('2d');
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  let particles = Array.from({ length: 80 }, () => ({
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: Math.random() * 2 + 1,
+    dx: (Math.random() - 0.5) * 0.5,
+    dy: (Math.random() - 0.5) * 0.5
+  }));
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#ff00ff';
+    particles.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      p.x += p.dx;
+      p.y += p.dy;
+      if (p.x < 0 || p.x > canvas.width) p.dx *= -1;
+      if (p.y < 0 || p.y > canvas.height) p.dy *= -1;
+    });
+    requestAnimationFrame(animate);
+  }
+  animate();
+</script>
+
+</body>
+</html>
