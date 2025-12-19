@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simulador: Vinagre + Bicarbonato → CO₂ (Globo)</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;margin:0;background:#0b1220;color:#e9eefc}
+    .wrap{max-width:980px;margin:0 auto;padding:20px}
+    h1{font-size:20px;margin:0 0 12px}
+    .grid{display:grid;grid-template-columns:1.2fr 0.8fr;gap:14px}
+    .card{background:#121b33;border:1px solid #223058;border-radius:14px;padding:14px}
+    label{display:block;font-size:13px;opacity:.9;margin:10px 0 6px}
+    input[type="range"]{width:100%}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .pill{background:#1a2550;border:1px solid #2a3a75;border-radius:999px;padding:6px 10px;font-size:12px}
+    button{background:#4b7cff;border:none;color:white;padding:10px 12px;border-radius:10px;font-weight:700;cursor:pointer}
+    button:active{transform:scale(.99)}
+    .muted{opacity:.85;font-size:13px;line-height:1.35}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap}
+    .viz{display:flex;gap:14px;align-items:center;justify-content:space-between}
+    .bottle{width:190px;height:280px;border:2px solid #3a4b86;border-radius:20px 20px 30px 30px;position:relative;background:linear-gradient(180deg,#0f1833,rgba(255,255,255,.04));overflow:hidden}
+    .liquid{position:absolute;bottom:0;left:0;right:0;height:40%;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(120,255,190,.18));border-top:1px solid rgba(255,255,255,.12)}
+    .bubbles{position:absolute;left:0;right:0;bottom:40%;top:10%;pointer-events:none}
+    .bubble{position:absolute;bottom:0;border-radius:999px;background:rgba(220,245,255,.35);border:1px solid rgba(220,245,255,.25);animation:rise 2.4s linear infinite}
+    @keyframes rise{from{transform:translateY(0);opacity:.0} 10%{opacity:.8} to{transform:translateY(-220px);opacity:0}}
+    .balloonWrap{width:220px;height:280px;display:flex;align-items:flex-end;justify-content:center}
+    .balloon{
+      width:130px;height:160px;border-radius:50% 50% 45% 45%;
+      background:radial-gradient(circle at 30% 30%,rgba(255,255,255,.28),rgba(255,90,130,.14));
+      border:2px solid rgba(255,255,255,.18);
+      transform-origin:50% 100%;
+      position:relative;
+      box-shadow:0 20px 60px rgba(0,0,0,.25);
+    }
+    .knot{
+      width:16px;height:16px;background:rgba(255,90,130,.2);
+      border:2px solid rgba(255,255,255,.18);
+      position:absolute;left:50%;bottom:-10px;transform:translateX(-50%) rotate(45deg);
+      border-radius:4px;
+    }
+    .string{width:2px;height:80px;background:rgba(255,255,255,.25);margin:0 auto}
+    .big{font-size:18px;font-weight:800}
+    .stat{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .stat .card{padding:10px;border-radius:12px}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Simulador: Vinagre (CH₃COOH) + Bicarbonato (NaHCO₃) → CO₂ (Globo)</h1>
+
+  <div class="grid">
+    <div class="card">
+      <div class="row">
+        <span class="pill">Ácido: CH₃COOH (vinagre)</span>
+        <span class="pill">Base: NaHCO₃ (bicarbonato)</span>
+        <span class="pill">Producto gas: CO₂</span>
+      </div>
+
+      <label>Vinagre (mL) <span id="v_ml_lbl" class="pill"></span></label>
+      <input id="v_ml" type="range" min="10" max="200" value="120" />
+
+      <label>Concentración ácido acético (%) <span id="v_pct_lbl" class="pill"></span></label>
+      <input id="v_pct" type="range" min="2" max="10" value="5" />
+
+      <label>Bicarbonato (g) <span id="b_g_lbl" class="pill"></span></label>
+      <input id="b_g" type="range" min="1" max="20" value="5" />
+
+      <label>Temperatura (°C) <span id="t_lbl" class="pill"></span></label>
+      <input id="temp" type="range" min="15" max="40" value="25" />
+
+      <div class="row" style="margin-top:12px">
+        <button id="run">Mezclar y generar CO₂</button>
+        <button id="reset" style="background:#2b3456">Reiniciar</button>
+        <span class="muted">*Simulación educativa (aprox). Sirve para explicar el concepto.</span>
+      </div>
+
+      <div class="stat">
+        <div class="card">
+          <div class="muted">Reactivo limitante</div>
+          <div id="lim" class="big">—</div>
+        </div>
+        <div class="card">
+          <div class="muted">CO₂ producido (moles)</div>
+          <div id="co2mol" class="big">—</div>
+        </div>
+        <div class="card">
+          <div class="muted">CO₂ producido (L, aprox)</div>
+          <div id="co2L" class="big">—</div>
+        </div>
+        <div class="card">
+          <div class="muted">Tamaño del globo (visual)</div>
+          <div id="ball" class="big">—</div>
+        </div>
+      </div>
+
+      <div style="margin-top:10px" class="card">
+        <div class="muted"><b>Disociación vs Ionización (lo que dices al exponer)</b></div>
+        <div id="chemText" class="mono"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="viz">
+        <div class="bottle">
+          <div class="liquid"></div>
+          <div class="bubbles" id="bubbles"></div>
+        </div>
+        <div class="balloonWrap">
+          <div style="text-align:center">
+            <div class="balloon" id="balloon">
+              <div class="knot"></div>
+            </div>
+            <div class="string"></div>
+            <div class="muted" style="margin-top:8px">CO₂ acumulado → sube presión → globo se expande</div>
+          </div>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:10px">
+        Tip para exposición: “Se infla porque el CO₂ ocupa volumen; en un sistema cerrado aumenta la presión y expande el globo”.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Constantes
+  const MW_NaHCO3 = 84.0066;         // g/mol
+  const MW_CH3COOH = 60.052;         // g/mol
+  const R = 0.082057;                // L·atm/(mol·K)
+  const P = 1.0;                     // atm (aprox)
+
+  // Supuestos simples (educativos):
+  // - Vinagre: % m/m aproximado, densidad ~1 g/mL para convertir mL→g de solución.
+  // - Moles de CH3COOH = (mL * 1 g/mL * %)/MW
+  // - Reacción 1:1 → moles CO2 = min(moles ácido, moles bicarbonato)
+  // - Volumen gas: PV = nRT
+
+  const els = {
+    v_ml: document.getElementById('v_ml'),
+    v_pct: document.getElementById('v_pct'),
+    b_g: document.getElementById('b_g'),
+    temp: document.getElementById('temp'),
+    v_ml_lbl: document.getElementById('v_ml_lbl'),
+    v_pct_lbl: document.getElementById('v_pct_lbl'),
+    b_g_lbl: document.getElementById('b_g_lbl'),
+    t_lbl: document.getElementById('t_lbl'),
+    run: document.getElementById('run'),
+    reset: document.getElementById('reset'),
+    lim: document.getElementById('lim'),
+    co2mol: document.getElementById('co2mol'),
+    co2L: document.getElementById('co2L'),
+    ball: document.getElementById('ball'),
+    balloon: document.getElementById('balloon'),
+    bubbles: document.getElementById('bubbles'),
+    chemText: document.getElementById('chemText'),
+  };
+
+  function fmt(x, d=4){ return Number(x).toFixed(d); }
+
+  function updateLabels(){
+    els.v_ml_lbl.textContent = `${els.v_ml.value} mL`;
+    els.v_pct_lbl.textContent = `${els.v_pct.value}%`;
+    els.b_g_lbl.textContent = `${els.b_g.value} g`;
+    els.t_lbl.textContent = `${els.temp.value} °C`;
+  }
+
+  function setChemText(){
+    els.chemText.textContent =
+`DISOCIACIÓN (se separan iones que ya existían):
+NaHCO₃ (s) → Na⁺ (ac) + HCO₃⁻ (ac)
+
+IONIZACIÓN (se forman iones nuevos desde una molécula):
+CH₃COOH (ac) ⇌ H⁺ (ac) + CH₃COO⁻ (ac)
+
+REACCIÓN (ácido-base) que produce gas:
+NaHCO₃ + CH₃COOH → CH₃COONa + H₂O + CO₂ ↑`;
+  }
+
+  function clearBubbles(){
+    els.bubbles.innerHTML = '';
+  }
+
+  function spawnBubbles(intensity=20){
+    clearBubbles();
+    const n = Math.min(80, Math.max(8, Math.round(intensity)));
+    for(let i=0;i<n;i++){
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      const size = 6 + Math.random()*14;
+      b.style.width = `${size}px`;
+      b.style.height = `${size}px`;
+      b.style.left = `${Math.random()*180}px`;
+      b.style.animationDuration = `${1.6 + Math.random()*1.8}s`;
+      b.style.animationDelay = `${Math.random()*1.2}s`;
+      els.bubbles.appendChild(b);
+    }
+  }
+
+  function compute(){
+    const v_ml = Number(els.v_ml.value);
+    const pct = Number(els.v_pct.value)/100;      // fracción
+    const b_g  = Number(els.b_g.value);
+    const T = Number(els.temp.value) + 273.15;
+
+    // moles de ácido acético (aprox)
+    const mass_solution_g = v_ml * 1.0;           // densidad ~ 1 g/mL
+    const mass_acid_g = mass_solution_g * pct;
+    const n_acid = mass_acid_g / MW_CH3COOH;
+
+    // moles de bicarbonato
+    const n_bicarb = b_g / MW_NaHCO3;
+
+    const n_co2 = Math.min(n_acid, n_bicarb);
+    const limiting = (n_acid < n_bicarb) ? 'Ácido (vinagre)' : 'Bicarbonato (NaHCO₃)';
+
+    // Volumen gas ideal (L)
+    const V = (n_co2 * R * T) / P;
+
+    return { n_acid, n_bicarb, n_co2, V, limiting };
+  }
+
+  function animateBalloon(volumeL){
+    // Mapeo visual: 0–4 L (aprox) → escala 0.7–1.7
+    const clamped = Math.max(0, Math.min(4.0, volumeL));
+    const scale = 0.7 + (clamped/4.0)*1.0;
+    els.balloon.style.transform = `scale(${scale})`;
+    els.ball.textContent = `${Math.round(scale*100)}%`;
+    spawnBubbles(10 + clamped*18);
+  }
+
+  function run(){
+    const { n_acid, n_bicarb, n_co2, V, limiting } = compute();
+
+    els.lim.textContent = limiting;
+    els.co2mol.textContent = fmt(n_co2, 4);
+    els.co2L.textContent = `${fmt(V, 2)} L`;
+
+    animateBalloon(V);
+
+    // Mensaje extra útil para exposición
+    // (sin complicar: explica por qué se infla)
+  }
+
+  function reset(){
+    els.v_ml.value = 120;
+    els.v_pct.value = 5;
+    els.b_g.value = 5;
+    els.temp.value = 25;
+    updateLabels();
+    setChemText();
+    clearBubbles();
+    els.balloon.style.transform = 'scale(0.8)';
+    els.lim.textContent = '—';
+    els.co2mol.textContent = '—';
+    els.co2L.textContent = '—';
+    els.ball.textContent = '—';
+  }
+
+  [els.v_ml, els.v_pct, els.b_g, els.temp].forEach(el => el.addEventListener('input', updateLabels));
+  els.run.addEventListener('click', run);
+  els.reset.addEventListener('click', reset);
+
+  updateLabels();
+  setChemText();
+  reset();
+</script>
+</body>
+</html>
